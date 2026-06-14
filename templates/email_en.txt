@@ -1,0 +1,12 @@
+Dear Hiring Team at {company_name},
+
+I am writing to express my interest in joining {company_name} in {city} as a {title}. With over {years_experience} years of experience in {sector} and construction surveying, I believe my expertise in setting out, as-built surveys, and plan preparation would support your engineering operations.
+
+I am proficient in Total Station ({total_station_brands}), GPS, and Level instruments, along with {software}. My background covers topographic and construction surveys, coordinate setting, shop drawing verification, technical reporting, and GIS submission for contractors, consultants, and municipalities.
+
+I hold membership with the Saudi Council of Engineers ({sce_membership}) and a valid driving license. I am fluent in Arabic and English and experienced in field work with HSE and QA/QC compliance.
+
+Please find my CV attached in PDF format. I welcome an interview at your convenience. Contact: {phone} or {sender_email}.
+
+Sincerely,
+{full_name}

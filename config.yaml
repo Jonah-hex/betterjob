@@ -1,0 +1,175 @@
+profile:
+  full_name: "Mohammed Basil Mahmood Yunus"
+  full_name_ar: "محمد باسل محمود يونس"
+  title: "General Land Surveyor"
+  title_ar: "مساح عام"
+  years_experience: 12
+  total_station_brands: "Leica, Trimble, Topcon"
+  software: "AutoCAD, GPS, Total Station, Level, Excel, GIS"
+  phone: "+966544883336"
+  sender_email: "ss.guess@hotmail.com"
+  linkedin: ""
+  city: "Jeddah"
+  nationality: "Palestinian"
+  sce_membership: "Saudi Council of Engineers — Technician, Surveyor General (since 2018)"
+  education: "Technical Thrift Gap Institute, Jeddah — 2017"
+
+# الخيار 1: Brevo + Hotmail مجاني (بعض الإيميلات قد تذهب Spam)
+# للترقية لاحقاً: راجع SETUP_DOMAIN.md
+email_mode: hotmail_brevo
+
+automation:
+  enabled: true
+  target_cities: [Jeddah, Abha]
+  auto_approve: true
+  auto_extract: true
+  auto_send: true
+  run_on_startup: false
+
+# discovery_provider: overpass | google | csv
+# overpass = مجاني بدون API (بيانات OSM محدودة في السعودية)
+# google   = Google Places (يتطلب Cloud + بطاقة)
+# csv      = استيراد من ملف data/companies.csv (الأضمن)
+discovery_provider: csv
+
+regions:
+  jeddah:
+    label_ar: "جدة"
+    cities: [Jeddah]
+    queries_ar:
+      - "مقاولات جدة"
+      - "مقاولات انشائية جدة"
+      - "مقاولات عامة جدة"
+      - "استشارات هندسية جدة"
+      - "شركات هندسة جدة"
+      - "شركات مساحة جدة"
+      - "مكتب هندسي جدة"
+      - "مقاولات بناء جدة"
+    queries_en:
+      - "construction company Jeddah Saudi Arabia"
+      - "civil engineering contractor Jeddah"
+      - "general contractor Jeddah"
+      - "land surveying company Jeddah"
+      - "engineering consultant Jeddah"
+      - "infrastructure contractor Jeddah"
+      - "building contractor Jeddah"
+      - "surveying engineering Jeddah"
+  abha:
+    label_ar: "أبها"
+    cities: [Abha]
+    queries_ar:
+      - "مقاولات أبها"
+      - "مقاولات انشائية أبها"
+      - "استشارات هندسية أبها"
+      - "شركات هندسة أبها"
+      - "شركات مساحة أبها"
+      - "مكتب هندسي أبها"
+      - "مقاولات عسير"
+    queries_en:
+      - "construction company Abha Saudi Arabia"
+      - "engineering consultant Abha"
+      - "civil engineering contractor Abha"
+      - "land surveying company Abha"
+      - "general contractor Abha Asir"
+      - "infrastructure contractor Abha"
+      - "building contractor Abha"
+  western:
+    label_ar: "المنطقة الغربية"
+    cities: [Jeddah, Makkah, Taif, Madinah, Yanbu]
+    queries_ar:
+      - "مقاولات جدة"
+      - "استشارات هندسية جدة"
+      - "شركات مساحة جدة"
+    queries_en:
+      - "construction company Jeddah Saudi Arabia"
+      - "land surveying company Jeddah"
+  southern:
+    label_ar: "المنطقة الجنوبية"
+    cities: [Abha, "Khamis Mushait", Jazan, Najran, "Al Baha"]
+    queries_ar:
+      - "مقاولات أبها"
+      - "استشارات هندسية عسير"
+    queries_en:
+      - "construction company Abha Saudi Arabia"
+      - "engineering consultant Asir region"
+
+filters:
+  exclude_types:
+    - restaurant
+    - pharmacy
+    - store
+    - gas_station
+    - hospital
+    - cafe
+    - bar
+    - lodging
+  include_keywords:
+    - contractor
+    - construction
+    - engineering
+    - survey
+    - infrastructure
+    - مقاول
+    - هندس
+    - مساح
+    - انشاء
+    - إنشاء
+    - استشارات
+
+discovery:
+  max_results_per_query: 60
+  language: ar
+
+email_extraction:
+  request_delay_seconds: 2
+  timeout_seconds: 15
+  paths_to_try:
+    - /contact
+    - /contact-us
+    - /careers
+    - /jobs
+    - /about
+    - /ar/contact
+    - /en/contact
+    - /توظيف
+    - /اتصل-بنا
+  priority_prefixes:
+    - careers
+    - hr
+    - recruitment
+    - jobs
+    - info
+  allow_guessed_emails: false
+
+sending:
+  max_per_day: 12
+  delay_seconds_between: 45
+  require_manual_approve: false
+  dry_run: false
+  attachment_names:
+    cv.pdf: "Moh. CV.pdf"
+    cv_uploaded.pdf: "Moh. CV Full.pdf"
+  attachments:
+    - assets/cv/cv.pdf
+    - assets/cv/cv_uploaded.pdf
+
+cv_ats_keywords:
+  - Total Station
+  - Setting Out
+  - Topographic Survey
+  - As-Built
+  - Control Points
+  - Construction Survey
+  - QA/QC
+  - AutoCAD
+  - Coordinate Systems
+  - UTM
+  - Shop Drawings
+  - Red Line
+  - GNSS
+  - RTK
+  - GPS
+  - Level
+  - GIS
+  - Land Surveying
+  - General Surveyor
