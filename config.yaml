@@ -26,11 +26,20 @@ automation:
   auto_send: true
   run_on_startup: false
 
-# discovery_provider: overpass | google | csv
-# overpass = مجاني بدون API (بيانات OSM محدودة في السعودية)
-# google   = Google Places (يتطلب Cloud + بطاقة)
-# csv      = استيراد من ملف data/companies.csv (الأضمن)
-discovery_provider: csv
+# discovery_provider: multi | overpass | google | csv
+# multi = جميع المصادر المتاحة (CSV + Google + OSM + دليل ويب + دومينات)
+discovery_provider: multi
+
+discovery:
+  sources:
+    - csv
+    - google
+    - overpass
+    - directory
+    - domains
+  max_results_per_query: 40
+  allow_domain_emails: true
+  language: ar
 
 regions:
   jeddah:
@@ -116,10 +125,6 @@ filters:
     - إنشاء
     - استشارات
 
-discovery:
-  max_results_per_query: 60
-  language: ar
-
 email_extraction:
   request_delay_seconds: 2
   timeout_seconds: 15
@@ -142,8 +147,8 @@ email_extraction:
   allow_guessed_emails: false
 
 sending:
-  max_per_day: 12
-  delay_seconds_between: 45
+  max_per_day: 50
+  delay_seconds_between: 30
   require_manual_approve: false
   dry_run: false
   attachment_names:

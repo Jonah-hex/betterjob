@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 import httpx
 import compose
 import database as db
+import delivery_tracking as tracking
 
 BASE_DIR = Path(__file__).parent
 ENV_PATH = BASE_DIR / ".env"
@@ -453,6 +454,8 @@ def send_to_company(
 
     composed = compose.compose_for_company(company, config)
     attachments = _resolve_attachments(config)
+    if not attachments:
+        return {"success": False, "error": "مرفق CV غير موجود — ولّد أو ارفع cv.pdf"}
 
     if dry_run:
         log_id = db.log_outreach(
@@ -464,14 +467,18 @@ def send_to_company(
             provider_message_id="DRY-RUN",
             cv_version="cv.pdf",
             dry_run=True,
+            delivery_status=db.DELIVERY_SENT,
         )
         db.update_company_status(company_id, "sent")
+        tracking.on_send_success(company_id, email_rec["id"], log_id, composed["subject"])
         return {
             "success": True,
             "dry_run": True,
             "log_id": log_id,
             "message": "تم التسجيل في وضع dry-run (لم يُرسل فعلياً)",
         }
+
+    tracking.on_send_start(company_id, email_rec["id"], composed["subject"])
 
     try:
         message_id = _dispatch_send(
@@ -492,8 +499,24 @@ def send_to_company(
             provider_message_id=message_id,
             cv_version="cv.pdf",
             dry_run=False,
+            delivery_status=db.DELIVERY_SENT,
         )
         db.update_company_status(company_id, "sent")
+        db.record_sent_company(
+            company_id=company_id,
+            outreach_log_id=log_id,
+            company_name=company["company_name"],
+            email=email_rec["email"],
+            city=company.get("city"),
+            sector=company.get("sector"),
+            website=company.get("website"),
+            discovery_source=company.get("discovery_source"),
+            subject=composed["subject"],
+            provider_message_id=message_id,
+            delivery_status=db.DELIVERY_SENT,
+            cv_attached=True,
+        )
+        tracking.on_send_success(company_id, email_rec["id"], log_id, composed["subject"])
 
         delay = sending_cfg.get("delay_seconds_between", 45)
         time.sleep(delay)
@@ -501,16 +524,19 @@ def send_to_company(
         return {"success": True, "dry_run": False, "log_id": log_id, "message_id": message_id}
 
     except Exception as exc:
+        err = str(exc)
         db.log_outreach(
             company_id=company_id,
             email_id=email_rec["id"],
             subject=composed["subject"],
             body_ar=composed["body_ar"],
             body_en=composed["body_en"],
-            error_message=str(exc),
+            error_message=err,
             dry_run=False,
+            delivery_status=db.DELIVERY_FAILED,
         )
-        return {"success": False, "error": str(exc)}
+        tracking.on_send_failure(company_id, email_rec["id"], err, composed["subject"])
+        return {"success": False, "error": err}
 
 
 def send_approved_batch(config: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
@@ -533,6 +559,8 @@ def auto_send_all(config: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     config = config or load_config()
     auto = config.get("automation", {})
     cities = auto.get("target_cities")
+
+    tracking.prepare_for_sending(cities)
 
     if auto.get("auto_approve", True):
         db.auto_approve_sendable(cities)

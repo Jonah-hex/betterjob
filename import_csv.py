@@ -51,6 +51,7 @@ def import_csv(
                 website=website,
                 phone=phone,
                 status="discovered",
+                discovery_source="csv",
             )
 
             if email and "@" in email:

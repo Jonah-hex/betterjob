@@ -20,8 +20,7 @@ import yaml
 from dotenv import load_dotenv
 
 import database as db
-import discover
-import discover_overpass
+import discover_multi
 import extract_email
 import import_csv
 import send_email
@@ -77,17 +76,28 @@ def check_prerequisites(config: dict) -> list[str]:
 def run_discovery(config: dict) -> dict:
     log("=== المرحلة 1: اكتشاف الشركات (جدة + أبها) ===")
     provider = config.get("discovery_provider", "overpass")
-    log(f"  المصدر: {provider} {'(مجاني — بدون API key)' if provider == 'overpass' else '(Google Places)'}")
+    log(f"  المصدر: {provider}")
 
     if provider == "google":
-        results = discover.discover_target_cities(config)
+        results = discover_multi.discover_all_sources(config)
+        results = results.get("by_source", {}).get("google", {})
+        if not isinstance(results, dict) or "new" not in str(results):
+            import discover
+            results = discover.discover_target_cities(config)
     elif provider == "csv":
         csv_path = BASE_DIR / "data" / "companies.csv"
         stats = import_csv.import_csv(csv_path)
         results = {"CSV": stats}
         log(f"  مستورد: {stats['imported']} | بإيميل: {stats['with_email']}")
-    else:
+    elif provider == "overpass":
+        import discover_overpass
         results = discover_overpass.discover_target_cities(config)
+    elif provider == "multi":
+        summary = discover_multi.discover_all_sources(config)
+        results = discover_multi.discover_target_cities(config)
+        log(f"  المصادر: {', '.join(summary.get('sources_run', []))}")
+    else:
+        results = discover_multi.discover_target_cities(config)
 
     total_new = sum(r.get("new", 0) for r in results.values())
     for city, stats in results.items():
@@ -126,6 +136,40 @@ def run_sending(config: dict) -> dict:
     return result
 
 
+def run_prepare_sendable(config: dict) -> dict:
+    """استخراج إيميلات + دومينات ثم تجهيز الشركات الجديدة للإرسال."""
+    import delivery_tracking as tracking
+
+    extract_result = run_extraction(config)
+    import discover_domains
+    domain_stats = discover_domains.enrich_all_pending(config)
+    cities = config.get("automation", {}).get("target_cities")
+    queue_stats = tracking.prepare_for_sending(cities)
+    pending = db.get_sendable_companies(cities)
+    return {
+        "extract": extract_result,
+        "domains": domain_stats,
+        "approved": queue_stats.get("approved", 0),
+        "queued": queue_stats.get("queued", 0),
+        "pending_count": len(pending),
+    }
+
+
+def run_apply_new(config: dict) -> dict:
+    """تقديم CV لجميع الشركات الجديدة الجاهزة (ضمن الحد اليومي)."""
+    prep = run_prepare_sendable(config)
+    send_result = run_sending(config)
+    return {**send_result, **prep}
+
+
+def run_discover_and_apply(config: dict) -> dict:
+    """اكتشاف شركات جديدة ثم تقديم CV عليها مباشرة."""
+    discovery = run_discovery(config)
+    apply_result = run_apply_new(config)
+    apply_result["discovery"] = discovery
+    return apply_result
+
+
 def run_full_pipeline(config: dict) -> None:
     errors = check_prerequisites(config)
     if errors:
@@ -140,6 +184,9 @@ def run_full_pipeline(config: dict) -> None:
 
     run_discovery(config)
     run_extraction(config)
+    import discover_domains
+    domain_stats = discover_domains.enrich_all_pending(config)
+    log(f"  دومينات: إيميل مُستنتج {domain_stats.get('email_found', 0)}")
     run_sending(config)
 
     stats_after = db.get_stats()

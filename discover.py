@@ -150,6 +150,7 @@ def discover_region(
                 phone=phone,
                 place_types=types,
                 status="discovered",
+                discovery_source="google",
             )
             if is_new:
                 stats["new"] += 1

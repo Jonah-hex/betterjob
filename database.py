@@ -11,6 +11,25 @@ from typing import Any, Generator, Optional
 
 DB_PATH = Path(__file__).parent / "data" / "outreach.db"
 
+SENDABLE_EMAIL_SOURCES = (
+    "found_on_page",
+    "manual",
+    "directory",
+    "domain_pattern",
+    "google_places",
+)
+
+# حالات تسليم CV / الإيميل
+DELIVERY_NOT_SENT = "not_sent"
+DELIVERY_PENDING = "pending"
+DELIVERY_QUEUED = "queued"
+DELIVERY_SENDING = "sending"
+DELIVERY_SENT = "sent"
+DELIVERY_DELIVERED = "delivered"
+DELIVERY_FAILED = "failed"
+DELIVERY_BOUNCED = "bounced"
+DELIVERY_NO_EMAIL = "no_email"
+
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -82,7 +101,134 @@ def init_db(db_path: Path = DB_PATH) -> None:
             CREATE INDEX IF NOT EXISTS idx_companies_status ON companies(status);
             CREATE INDEX IF NOT EXISTS idx_companies_region ON companies(region);
             CREATE INDEX IF NOT EXISTS idx_outreach_sent_at ON outreach_log(sent_at);
+
+            CREATE TABLE IF NOT EXISTS sent_companies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id INTEGER NOT NULL UNIQUE,
+                outreach_log_id INTEGER,
+                company_name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                city TEXT,
+                sector TEXT,
+                website TEXT,
+                discovery_source TEXT,
+                subject TEXT,
+                sent_at TEXT NOT NULL,
+                provider_message_id TEXT,
+                FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+                FOREIGN KEY (outreach_log_id) REFERENCES outreach_log(id) ON DELETE SET NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_sent_companies_sent_at ON sent_companies(sent_at);
+
+            CREATE TABLE IF NOT EXISTS email_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id INTEGER NOT NULL,
+                email_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                subject TEXT,
+                outreach_log_id INTEGER,
+                attempts INTEGER DEFAULT 0,
+                last_error TEXT,
+                cv_attached INTEGER DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(company_id, email_id),
+                FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+                FOREIGN KEY (email_id) REFERENCES emails(id) ON DELETE CASCADE,
+                FOREIGN KEY (outreach_log_id) REFERENCES outreach_log(id) ON DELETE SET NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_email_queue_status ON email_queue(status);
             """
+        )
+        _migrate_schema(conn)
+        _backfill_sent_companies(conn)
+        _sync_delivery_from_history(conn)
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(companies)").fetchall()}
+    if "discovery_source" not in cols:
+        conn.execute("ALTER TABLE companies ADD COLUMN discovery_source TEXT DEFAULT 'unknown'")
+
+    outreach_cols = {row[1] for row in conn.execute("PRAGMA table_info(outreach_log)").fetchall()}
+    if "delivery_status" not in outreach_cols:
+        conn.execute(
+            "ALTER TABLE outreach_log ADD COLUMN delivery_status TEXT DEFAULT 'sent'"
+        )
+    if "delivered_at" not in outreach_cols:
+        conn.execute("ALTER TABLE outreach_log ADD COLUMN delivered_at TEXT")
+    if "bounce_reason" not in outreach_cols:
+        conn.execute("ALTER TABLE outreach_log ADD COLUMN bounce_reason TEXT")
+
+    sent_cols = {row[1] for row in conn.execute("PRAGMA table_info(sent_companies)").fetchall()}
+    if "delivery_status" not in sent_cols:
+        conn.execute(
+            "ALTER TABLE sent_companies ADD COLUMN delivery_status TEXT DEFAULT 'sent'"
+        )
+    if "delivered_at" not in sent_cols:
+        conn.execute("ALTER TABLE sent_companies ADD COLUMN delivered_at TEXT")
+    if "cv_attached" not in sent_cols:
+        conn.execute("ALTER TABLE sent_companies ADD COLUMN cv_attached INTEGER DEFAULT 1")
+
+
+def _sync_delivery_from_history(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        UPDATE outreach_log SET delivery_status = 'sent'
+        WHERE dry_run = 0 AND error_message IS NULL
+        AND (delivery_status IS NULL OR delivery_status = '')
+        """
+    )
+    conn.execute(
+        """
+        UPDATE outreach_log SET delivery_status = 'failed'
+        WHERE error_message IS NOT NULL AND dry_run = 0
+        AND (delivery_status IS NULL OR delivery_status = '')
+        """
+    )
+    conn.execute(
+        """
+        UPDATE sent_companies SET delivery_status = 'sent'
+        WHERE delivery_status IS NULL OR delivery_status = ''
+        """
+    )
+
+
+def _backfill_sent_companies(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        """
+        SELECT o.id AS outreach_log_id, o.company_id, o.subject, o.sent_at, o.provider_message_id,
+               c.company_name, c.city, c.sector, c.website, c.discovery_source, e.email
+        FROM outreach_log o
+        JOIN companies c ON c.id = o.company_id
+        LEFT JOIN emails e ON e.id = o.email_id
+        WHERE o.dry_run = 0 AND o.error_message IS NULL
+        ORDER BY o.sent_at DESC
+        """
+    ).fetchall()
+    for row in rows:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO sent_companies (
+                company_id, outreach_log_id, company_name, email, city, sector,
+                website, discovery_source, subject, sent_at, provider_message_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                row["company_id"],
+                row["outreach_log_id"],
+                row["company_name"],
+                row["email"] or "",
+                row["city"],
+                row["sector"],
+                row["website"],
+                row["discovery_source"],
+                row["subject"],
+                row["sent_at"],
+                row["provider_message_id"],
+            ),
         )
 
 
@@ -96,6 +242,7 @@ def upsert_company(
     phone: Optional[str] = None,
     place_types: Optional[list[str]] = None,
     status: str = "discovered",
+    discovery_source: Optional[str] = None,
     db_path: Path = DB_PATH,
 ) -> tuple[int, bool]:
     """Insert or update company. Returns (id, is_new)."""
@@ -114,7 +261,8 @@ def upsert_company(
                 UPDATE companies SET
                     company_name = ?, city = ?, region = ?, sector = ?,
                     website = COALESCE(?, website), phone = COALESCE(?, phone),
-                    place_types = ?, updated_at = ?
+                    place_types = ?, discovery_source = COALESCE(?, discovery_source),
+                    updated_at = ?
                 WHERE google_place_id = ?
                 """,
                 (
@@ -125,6 +273,7 @@ def upsert_company(
                     website,
                     phone,
                     types_json,
+                    discovery_source,
                     now,
                     google_place_id,
                 ),
@@ -135,8 +284,9 @@ def upsert_company(
             """
             INSERT INTO companies (
                 company_name, city, region, sector, website, phone,
-                google_place_id, place_types, status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                google_place_id, place_types, status, discovery_source,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 company_name,
@@ -148,6 +298,7 @@ def upsert_company(
                 google_place_id,
                 types_json,
                 status,
+                discovery_source or "unknown",
                 now,
                 now,
             ),
@@ -272,7 +423,7 @@ def already_sent_to_email(company_id: int, email_id: int, db_path: Path = DB_PAT
         row = conn.execute(
             """
             SELECT 1 FROM outreach_log
-            WHERE company_id = ? AND email_id = ? AND error_message IS NULL
+            WHERE company_id = ? AND email_id = ? AND error_message IS NULL AND dry_run = 0
             LIMIT 1
             """,
             (company_id, email_id),
@@ -290,15 +441,25 @@ def log_outreach(
     cv_version: str = "v1",
     error_message: Optional[str] = None,
     dry_run: bool = False,
+    delivery_status: Optional[str] = None,
     db_path: Path = DB_PATH,
 ) -> int:
+    if delivery_status is None:
+        if dry_run:
+            delivery_status = DELIVERY_SENT
+        elif error_message:
+            delivery_status = DELIVERY_FAILED
+        else:
+            delivery_status = DELIVERY_SENT
+
     with get_connection(db_path) as conn:
         cursor = conn.execute(
             """
             INSERT INTO outreach_log (
                 company_id, email_id, subject, body_ar, body_en,
-                sent_at, provider_message_id, cv_version, error_message, dry_run
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                sent_at, provider_message_id, cv_version, error_message, dry_run,
+                delivery_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 company_id,
@@ -311,6 +472,7 @@ def log_outreach(
                 cv_version,
                 error_message,
                 int(dry_run),
+                delivery_status,
             ),
         )
         return cursor.lastrowid
@@ -340,6 +502,8 @@ def get_stats(db_path: Path = DB_PATH) -> dict[str, int]:
         stats = {row["status"]: row["cnt"] for row in rows}
         stats["total"] = sum(stats.values())
         stats["sent_today"] = count_sent_today(db_path)
+        sent_row = conn.execute("SELECT COUNT(*) AS cnt FROM sent_companies").fetchone()
+        stats["sent_confirmed"] = sent_row["cnt"] if sent_row else 0
         return stats
 
 
@@ -358,16 +522,18 @@ def get_companies_without_email(db_path: Path = DB_PATH) -> list[dict[str, Any]]
 
 
 def get_approved_companies(db_path: Path = DB_PATH) -> list[dict[str, Any]]:
+    placeholders = ",".join("?" * len(SENDABLE_EMAIL_SOURCES))
     with get_connection(db_path) as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT c.*, e.id AS email_id, e.email, e.source AS email_source
             FROM companies c
             JOIN emails e ON e.company_id = c.id AND e.is_primary = 1
             WHERE c.status = 'approved'
-            AND e.source IN ('found_on_page', 'manual')
+            AND e.source IN ({placeholders})
             ORDER BY c.id
-            """
+            """,
+            list(SENDABLE_EMAIL_SOURCES),
         ).fetchall()
         return [dict(row) for row in rows]
 
@@ -377,18 +543,20 @@ def get_sendable_companies(
     db_path: Path = DB_PATH,
 ) -> list[dict[str, Any]]:
     """Companies with verified email, not yet sent."""
-    query = """
+    src_placeholders = ",".join("?" * len(SENDABLE_EMAIL_SOURCES))
+    query = f"""
         SELECT c.*, e.id AS email_id, e.email, e.source AS email_source
         FROM companies c
         JOIN emails e ON e.company_id = c.id AND e.is_primary = 1
         WHERE c.status IN ('email_found', 'approved')
-        AND e.source IN ('found_on_page', 'manual')
+        AND e.source IN ({src_placeholders})
         AND NOT EXISTS (
             SELECT 1 FROM outreach_log o
-            WHERE o.company_id = c.id AND o.email_id = e.id AND o.error_message IS NULL
+            WHERE o.company_id = c.id AND o.email_id = e.id
+            AND o.error_message IS NULL AND o.dry_run = 0
         )
     """
-    params: list[Any] = []
+    params: list[Any] = list(SENDABLE_EMAIL_SOURCES)
     if cities:
         placeholders = ",".join("?" * len(cities))
         query += f" AND c.city IN ({placeholders})"
@@ -409,3 +577,315 @@ def auto_approve_sendable(cities: Optional[list[str]] = None, db_path: Path = DB
             update_company_status(company["id"], "approved", db_path)
             count += 1
     return count
+
+
+def record_sent_company(
+    company_id: int,
+    outreach_log_id: int,
+    company_name: str,
+    email: str,
+    city: Optional[str] = None,
+    sector: Optional[str] = None,
+    website: Optional[str] = None,
+    discovery_source: Optional[str] = None,
+    subject: Optional[str] = None,
+    provider_message_id: Optional[str] = None,
+    sent_at: Optional[str] = None,
+    delivery_status: str = DELIVERY_SENT,
+    cv_attached: bool = True,
+    db_path: Path = DB_PATH,
+) -> None:
+    with get_connection(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO sent_companies (
+                company_id, outreach_log_id, company_name, email, city, sector,
+                website, discovery_source, subject, sent_at, provider_message_id,
+                delivery_status, cv_attached
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(company_id) DO UPDATE SET
+                outreach_log_id = excluded.outreach_log_id,
+                company_name = excluded.company_name,
+                email = excluded.email,
+                city = excluded.city,
+                sector = excluded.sector,
+                website = excluded.website,
+                discovery_source = excluded.discovery_source,
+                subject = excluded.subject,
+                sent_at = excluded.sent_at,
+                provider_message_id = excluded.provider_message_id,
+                delivery_status = excluded.delivery_status,
+                cv_attached = excluded.cv_attached
+            """,
+            (
+                company_id,
+                outreach_log_id,
+                company_name,
+                email,
+                city,
+                sector,
+                website,
+                discovery_source,
+                subject,
+                sent_at or _utcnow(),
+                provider_message_id,
+                delivery_status,
+                int(cv_attached),
+            ),
+        )
+
+
+def get_sent_companies(
+    city: Optional[str] = None,
+    limit: int = 500,
+    db_path: Path = DB_PATH,
+) -> list[dict[str, Any]]:
+    query = "SELECT * FROM sent_companies WHERE 1=1"
+    params: list[Any] = []
+    if city:
+        query += " AND city = ?"
+        params.append(city)
+    query += " ORDER BY sent_at DESC LIMIT ?"
+    params.append(limit)
+    with get_connection(db_path) as conn:
+        rows = conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_discovery_stats(db_path: Path = DB_PATH) -> dict[str, int]:
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT COALESCE(discovery_source, 'unknown') AS src, COUNT(*) AS cnt
+            FROM companies GROUP BY src
+            """
+        ).fetchall()
+        return {row["src"]: row["cnt"] for row in rows}
+
+
+def upsert_queue_item(
+    company_id: int,
+    email_id: int,
+    status: str = DELIVERY_PENDING,
+    subject: Optional[str] = None,
+    outreach_log_id: Optional[int] = None,
+    last_error: Optional[str] = None,
+    increment_attempts: bool = False,
+    db_path: Path = DB_PATH,
+) -> int:
+    now = _utcnow()
+    with get_connection(db_path) as conn:
+        existing = conn.execute(
+            "SELECT id, attempts FROM email_queue WHERE company_id = ? AND email_id = ?",
+            (company_id, email_id),
+        ).fetchone()
+        attempts = (existing["attempts"] if existing else 0) + (1 if increment_attempts else 0)
+        if existing:
+            conn.execute(
+                """
+                UPDATE email_queue SET
+                    status = ?, subject = COALESCE(?, subject),
+                    outreach_log_id = COALESCE(?, outreach_log_id),
+                    attempts = ?, last_error = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (status, subject, outreach_log_id, attempts, last_error, now, existing["id"]),
+            )
+            return existing["id"]
+        cursor = conn.execute(
+            """
+            INSERT INTO email_queue (
+                company_id, email_id, status, subject, outreach_log_id,
+                attempts, last_error, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (company_id, email_id, status, subject, outreach_log_id, attempts, last_error, now, now),
+        )
+        return cursor.lastrowid
+
+
+def update_queue_status(
+    company_id: int,
+    email_id: int,
+    status: str,
+    outreach_log_id: Optional[int] = None,
+    last_error: Optional[str] = None,
+    db_path: Path = DB_PATH,
+) -> None:
+    upsert_queue_item(
+        company_id,
+        email_id,
+        status=status,
+        outreach_log_id=outreach_log_id,
+        last_error=last_error,
+        increment_attempts=(status == DELIVERY_FAILED),
+        db_path=db_path,
+    )
+
+
+def mark_delivered(
+    company_id: int,
+    outreach_log_id: Optional[int] = None,
+    db_path: Path = DB_PATH,
+) -> None:
+    now = _utcnow()
+    with get_connection(db_path) as conn:
+        if outreach_log_id:
+            conn.execute(
+                """
+                UPDATE outreach_log SET delivery_status = ?, delivered_at = ?
+                WHERE id = ?
+                """,
+                (DELIVERY_DELIVERED, now, outreach_log_id),
+            )
+        conn.execute(
+            """
+            UPDATE sent_companies SET delivery_status = ?, delivered_at = ?
+            WHERE company_id = ?
+            """,
+            (DELIVERY_DELIVERED, now, company_id),
+        )
+    email_row = get_primary_email(company_id, db_path)
+    if email_row:
+        update_queue_status(
+            company_id, email_row["id"], DELIVERY_DELIVERED, outreach_log_id, db_path=db_path
+        )
+
+
+def sync_sendable_to_queue(
+    cities: Optional[list[str]] = None,
+    db_path: Path = DB_PATH,
+) -> int:
+    """Add sendable companies to queue as pending."""
+    count = 0
+    for company in get_sendable_companies(cities, db_path):
+        email_id = company.get("email_id")
+        if not email_id:
+            continue
+        upsert_queue_item(
+            company["id"],
+            email_id,
+            status=DELIVERY_PENDING,
+            db_path=db_path,
+        )
+        count += 1
+    return count
+
+
+def get_queue_by_status(
+    status: str,
+    cities: Optional[list[str]] = None,
+    limit: int = 500,
+    db_path: Path = DB_PATH,
+) -> list[dict[str, Any]]:
+    query = """
+        SELECT q.*, c.company_name, c.city, c.sector, c.website, c.discovery_source, e.email
+        FROM email_queue q
+        JOIN companies c ON c.id = q.company_id
+        JOIN emails e ON e.id = q.email_id
+        WHERE q.status = ?
+    """
+    params: list[Any] = [status]
+    if cities:
+        placeholders = ",".join("?" * len(cities))
+        query += f" AND c.city IN ({placeholders})"
+        params.extend(cities)
+    query += " ORDER BY q.updated_at DESC LIMIT ?"
+    params.append(limit)
+    with get_connection(db_path) as conn:
+        return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+
+def get_sent_by_delivery_status(
+    delivery_status: str,
+    city: Optional[str] = None,
+    limit: int = 500,
+    db_path: Path = DB_PATH,
+) -> list[dict[str, Any]]:
+    query = "SELECT * FROM sent_companies WHERE delivery_status = ?"
+    params: list[Any] = [delivery_status]
+    if city:
+        query += " AND city = ?"
+        params.append(city)
+    query += " ORDER BY sent_at DESC LIMIT ?"
+    params.append(limit)
+    with get_connection(db_path) as conn:
+        return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+
+def get_failed_deliveries(
+    cities: Optional[list[str]] = None,
+    limit: int = 200,
+    db_path: Path = DB_PATH,
+) -> list[dict[str, Any]]:
+    query = """
+        SELECT o.*, c.company_name, c.city, e.email
+        FROM outreach_log o
+        JOIN companies c ON c.id = o.company_id
+        LEFT JOIN emails e ON e.id = o.email_id
+        WHERE o.dry_run = 0 AND o.error_message IS NOT NULL
+    """
+    params: list[Any] = []
+    if cities:
+        placeholders = ",".join("?" * len(cities))
+        query += f" AND c.city IN ({placeholders})"
+        params.extend(cities)
+    query += " ORDER BY o.sent_at DESC LIMIT ?"
+    params.append(limit)
+    with get_connection(db_path) as conn:
+        return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+
+def get_not_sent_companies(
+    cities: Optional[list[str]] = None,
+    limit: int = 500,
+    db_path: Path = DB_PATH,
+) -> list[dict[str, Any]]:
+    """Companies with email, never successfully sent."""
+    src_placeholders = ",".join("?" * len(SENDABLE_EMAIL_SOURCES))
+    query = f"""
+        SELECT c.*, e.id AS email_id, e.email, e.source AS email_source
+        FROM companies c
+        JOIN emails e ON e.company_id = c.id AND e.is_primary = 1
+        WHERE e.source IN ({src_placeholders})
+        AND NOT EXISTS (
+            SELECT 1 FROM outreach_log o
+            WHERE o.company_id = c.id AND o.email_id = e.id
+            AND o.error_message IS NULL AND o.dry_run = 0
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM email_queue q
+            WHERE q.company_id = c.id AND q.email_id = e.id
+            AND q.status IN ('pending', 'queued', 'sending')
+        )
+    """
+    params: list[Any] = list(SENDABLE_EMAIL_SOURCES)
+    if cities:
+        placeholders = ",".join("?" * len(cities))
+        query += f" AND c.city IN ({placeholders})"
+        params.extend(cities)
+    query += " ORDER BY c.id LIMIT ?"
+    params.append(limit)
+    with get_connection(db_path) as conn:
+        return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+
+def get_no_email_companies(
+    cities: Optional[list[str]] = None,
+    limit: int = 500,
+    db_path: Path = DB_PATH,
+) -> list[dict[str, Any]]:
+    query = """
+        SELECT c.* FROM companies c
+        WHERE NOT EXISTS (SELECT 1 FROM emails e WHERE e.company_id = c.id)
+        OR c.status = 'no_email'
+    """
+    params: list[Any] = []
+    if cities:
+        placeholders = ",".join("?" * len(cities))
+        query += f" AND c.city IN ({placeholders})"
+        params.extend(cities)
+    query += " ORDER BY c.updated_at DESC LIMIT ?"
+    params.append(limit)
+    with get_connection(db_path) as conn:
+        return [dict(r) for r in conn.execute(query, params).fetchall()]

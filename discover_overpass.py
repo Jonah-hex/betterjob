@@ -166,6 +166,7 @@ def discover_city_overpass(
             phone=phone,
             place_types=list(tags.keys())[:10],
             status="discovered",
+            discovery_source="overpass",
         )
 
         if email and "@" in email:

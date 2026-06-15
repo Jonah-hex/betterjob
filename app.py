@@ -18,12 +18,33 @@ import compose
 import database as db
 import extract_email
 import import_csv
-import send_email
 import ats_audit
 import cv_generate
 
+import discover_multi
+import discover_directory
+import discover_domains
+import send_email
+
+db = importlib.reload(db)
+
+import auto_run
+import delivery_tracking
+
 send_email = importlib.reload(send_email)
-from auto_run import check_prerequisites, run_discovery, run_extraction, run_sending
+auto_run = importlib.reload(auto_run)
+delivery_tracking = importlib.reload(delivery_tracking)
+discover_multi = importlib.reload(discover_multi)
+discover_directory = importlib.reload(discover_directory)
+discover_domains = importlib.reload(discover_domains)
+
+check_prerequisites = auto_run.check_prerequisites
+run_discovery = auto_run.run_discovery
+run_extraction = auto_run.run_extraction
+run_sending = auto_run.run_sending
+run_apply_new = auto_run.run_apply_new
+run_discover_and_apply = auto_run.run_discover_and_apply
+run_prepare_sendable = auto_run.run_prepare_sendable
 from check_domain import check_domain_setup
 
 BASE_DIR = Path(__file__).parent
@@ -44,6 +65,15 @@ STATUS_LABELS = {
     "sent": "✅ تم الإرسال",
     "replied": "💬 رد",
     "rejected": "🚫 مرفوض",
+}
+
+SOURCE_LABELS = {
+    "csv": "📄 CSV",
+    "google": "🗺️ Google",
+    "overpass": "🌍 OSM",
+    "directory": "📒 دليل ويب",
+    "domains": "🌐 دومين",
+    "unknown": "—",
 }
 
 
@@ -100,14 +130,15 @@ if st.sidebar.button("🔌 اختبار البريد", use_container_width=True)
         st.sidebar.error(result["message"])
 
 st.sidebar.markdown("---")
-st.sidebar.info("جدة + أبها | 12 إيميل/يوم | وضع آلي")
+st.sidebar.info(f"جدة + أبها | {config['sending']['max_per_day']} إيميل/يوم | اكتشاف متعدد المصادر")
 
 # ── Tabs ─────────────────────────────────────────────────────────
-tab_home, tab_auto, tab_companies, tab_send, tab_log, tab_cv, tab_settings = st.tabs(
+tab_home, tab_auto, tab_companies, tab_delivery, tab_send, tab_log, tab_cv, tab_settings = st.tabs(
     [
         "🏠 الرئيسية",
         "🚀 تشغيل آلي",
         "🏢 الشركات",
+        "📬 تتبع التسليم",
         "✉️ إرسال",
         "📋 السجل",
         "📄 CV",
@@ -126,9 +157,9 @@ with tab_home:
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("إجمالي الشركات", stats.get("total", 0))
     c2.metric("إيميل جاهز", stats.get("email_found", 0))
-    c3.metric("تم الإرسال", stats.get("sent", 0))
+    c3.metric("مُرسل فعلياً", stats.get("sent_confirmed", 0))
     c4.metric("جاهز للإرسال", len(sendable))
-    c5.metric("مُرسل اليوم", stats.get("sent_today", 0))
+    c5.metric("مُرسل اليوم", f"{stats.get('sent_today', 0)} / {config['sending']['max_per_day']}")
 
     st.markdown("---")
 
@@ -152,10 +183,10 @@ with tab_home:
         st.subheader("سير العمل")
         st.markdown("""
         ```
-        1. استيراد شركات (CSV)     ✅ 28 شركة
-        2. استخراج إيميلات          تلقائي
-        3. توليد رسالة HR           تلقائي
-        4. إرسال CV + رسالة         Brevo
+        1. اكتشاف متعدد المصادر      CSV + Google + OSM + دليل
+        2. استخراج إيميلات + دومين   تلقائي
+        3. توليد رسالة HR             تلقائي
+        4. إرسال CV (حتى 50/يوم)     Brevo
         ```
         """)
         cv_ok = send_email.get_cv_info().get("exists", False)
@@ -177,7 +208,12 @@ with tab_home:
 # ── Tab: Auto Run ────────────────────────────────────────────────
 with tab_auto:
     st.header("🚀 تشغيل آلي")
-    mode_label = {"csv": "ملف CSV", "overpass": "OpenStreetMap", "google": "Google Places"}
+    mode_label = {
+        "csv": "ملف CSV",
+        "overpass": "OpenStreetMap",
+        "google": "Google Places",
+        "multi": "متعدد المصادر",
+    }
     st.caption(f"المصدر: {mode_label.get(discovery_mode, discovery_mode)} | الإرسال: Brevo + Hotmail")
 
     prereq_errors = check_prerequisites(config)
@@ -243,42 +279,351 @@ with tab_auto:
 with tab_companies:
     st.header("🏢 الشركات")
 
-    f1, f2, f3 = st.columns(3)
-    cities = ["الكل", "Jeddah", "Abha"]
-    filter_city = f1.selectbox("المدينة", cities)
-    filter_status = f2.selectbox("الحالة", ["الكل"] + list(STATUS_LABELS.keys()))
-    search = f3.text_input("بحث بالاسم")
+    sub_all, sub_sent, sub_discover = st.tabs([
+        "📋 كل الشركات",
+        "✅ تم الإرسال فعلياً",
+        "🔎 اكتشاف متعدد المصادر",
+    ])
 
-    city_param = None if filter_city == "الكل" else filter_city
-    status_param = None if filter_status == "الكل" else filter_status
-    companies = db.get_companies(status=status_param, city=city_param)
+    with sub_sent:
+        st.subheader("الشركات التي وصلها CV فعلياً")
+        sent_city = st.selectbox("المدينة", ["الكل", "Jeddah", "Abha"], key="sent_city_filter")
+        sent_rows = db.get_sent_companies(
+            city=None if sent_city == "الكل" else sent_city,
+            limit=500,
+        )
+        if sent_rows:
+            st.dataframe(
+                pd.DataFrame([{
+                    "الشركة": r["company_name"],
+                    "الإيميل": r["email"],
+                    "المدينة": r.get("city", ""),
+                    "القطاع": r.get("sector", ""),
+                    "المصدر": SOURCE_LABELS.get(r.get("discovery_source", ""), r.get("discovery_source", "—")),
+                    "تاريخ الإرسال": r.get("sent_at", ""),
+                    "الموقع": r.get("website", ""),
+                } for r in sent_rows]),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(f"إجمالي مُرسل فعلياً: {len(sent_rows)}")
+        else:
+            st.info("لم يُرسل لأي شركة بعد — سيظهر الجدول تلقائياً بعد الإرسال الناجح")
 
-    if search.strip():
-        companies = [c for c in companies if search.lower() in c["company_name"].lower()]
+    with sub_discover:
+        st.subheader("اكتشاف احترافي من مصادر متعددة")
+        st.caption(
+            "ابحث عن شركات جديدة → جهّز الإيميلات → قدّم CV → تنتقل تلقائياً إلى «تم الإرسال فعلياً»"
+        )
 
-    if companies:
-        rows = [{
-            "ID": c["id"],
-            "الشركة": c["company_name"],
-            "المدينة": c.get("city", ""),
-            "القطاع": c.get("sector", ""),
-            "الإيميل": c.get("primary_email", "—"),
-            "الحالة": status_badge(c.get("status", "")),
-            "الموقع": c.get("website", ""),
-        } for c in companies]
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-        st.caption(f"عرض {len(companies)} شركة")
+        target_cities = config.get("automation", {}).get("target_cities", ["Jeddah", "Abha"])
+        pending_new = db.get_sendable_companies(target_cities)
+        remaining_today = max(0, config["sending"]["max_per_day"] - db.count_sent_today())
 
-        if st.button("🔄 استيراد CSV من جديد"):
+        pm1, pm2, pm3, pm4 = st.columns(4)
+        pm1.metric("جاهز للتقديم", len(pending_new))
+        pm2.metric("متبقي اليوم", remaining_today)
+        pm3.metric("مُرسل فعلياً", stats.get("sent_confirmed", 0))
+        pm4.metric("إجمالي الشركات", stats.get("total", 0))
+
+        if pending_new:
+            st.markdown("**الشركات الجديدة الجاهزة للتقديم:**")
+            st.dataframe(
+                pd.DataFrame([{
+                    "الشركة": c["company_name"],
+                    "المدينة": c.get("city", ""),
+                    "الإيميل": c.get("email", ""),
+                    "المصدر": SOURCE_LABELS.get(c.get("discovery_source", ""), c.get("discovery_source", "—")),
+                    "الموقع": c.get("website", "") or "—",
+                } for c in pending_new[:50]]),
+                use_container_width=True,
+                hide_index=True,
+            )
+            if len(pending_new) > 50:
+                st.caption(f"يعرض 50 من {len(pending_new)} — الباقي يُرسل تلقائياً حسب الحد اليومي")
+        else:
+            st.info("لا توجد شركات جديدة جاهزة — اضغط «اكتشاف شامل» أو «اكتشاف + تقديم» للبحث عن شركات جديدة")
+
+        st.markdown("---")
+        src_stats = db.get_discovery_stats()
+        if src_stats:
+            cols = st.columns(min(len(src_stats), 5))
+            for i, (src, cnt) in enumerate(src_stats.items()):
+                cols[i % len(cols)].metric(
+                    SOURCE_LABELS.get(src, src),
+                    cnt,
+                )
+
+        d1, d2, d3, d4, d5 = st.columns(5)
+        prereq_apply = check_prerequisites(config)
+
+        if d1.button("🚀 اكتشاف شامل", use_container_width=True):
+            with st.spinner("جاري الاكتشاف من جميع المصادر..."):
+                summary = discover_multi.discover_all_sources(config)
+                prep = run_prepare_sendable(config)
+                st.success(
+                    f"مصادر: {', '.join(summary.get('sources_run', []))} | "
+                    f"جديد: {summary.get('total_new', 0)} | "
+                    f"إيميلات: {prep['extract'].get('email_found', 0)} | "
+                    f"جاهز للتقديم: {prep['pending_count']}"
+                )
+                st.rerun()
+
+        if d2.button("📤 تقديم CV للجديد", type="primary", use_container_width=True):
+            if prereq_apply:
+                st.error("أكمل المتطلبات أولاً: " + " | ".join(prereq_apply))
+            elif dry_run:
+                st.warning("أوقف وضع Dry-Run من الشريط الجانبي للإرسال الفعلي")
+            elif not pending_new:
+                st.warning("لا توجد شركات جديدة جاهزة — نفّذ اكتشافاً أولاً")
+            else:
+                with st.spinner(f"جاري إرسال CV لـ {min(len(pending_new), remaining_today)} شركة..."):
+                    result = run_apply_new(config)
+                    st.success(
+                        f"✅ أُرسل: {result['sent']} | ❌ فشل: {result['failed']} | "
+                        f"متبقي اليوم: {result['remaining_today']}"
+                    )
+                    if result.get("details"):
+                        with st.expander("تفاصيل الإرسال"):
+                            for d in result["details"]:
+                                icon = "✅" if d.get("success") else "❌"
+                                st.write(f"{icon} {d.get('company')} — {d.get('email', d.get('error', ''))}")
+                    st.rerun()
+
+        if d3.button("⚡ اكتشاف + تقديم", use_container_width=True):
+            if prereq_apply:
+                st.error("أكمل المتطلبات أولاً: " + " | ".join(prereq_apply))
+            elif dry_run:
+                st.warning("أوقف وضع Dry-Run من الشريط الجانبي للإرسال الفعلي")
+            else:
+                with st.spinner("اكتشاف شركات جديدة ثم تقديم CV..."):
+                    result = run_discover_and_apply(config)
+                    st.success(
+                        f"اكتشاف ✅ | أُرسل: {result['sent']} | فشل: {result['failed']} | "
+                        f"جاهز متبقي: {result.get('pending_count', 0)}"
+                    )
+                    if result.get("details"):
+                        with st.expander("تفاصيل الإرسال"):
+                            for d in result["details"]:
+                                icon = "✅" if d.get("success") else "❌"
+                                st.write(f"{icon} {d.get('company')} — {d.get('email', d.get('error', ''))}")
+                    st.rerun()
+
+        if d4.button("📒 دليل ويب", use_container_width=True):
+            with st.spinner("بحث في الدلائل..."):
+                result = discover_directory.discover_target_cities(config)
+                prep = run_prepare_sendable(config)
+                st.success(f"{result} | جاهز للتقديم: {prep['pending_count']}")
+                st.rerun()
+
+        if d5.button("🔄 CSV", use_container_width=True):
             csv_path = BASE_DIR / "data" / "companies.csv"
             if csv_path.exists():
                 result = import_csv.import_csv(csv_path)
-                st.success(f"مستورد: {result['imported']} | بإيميل: {result['with_email']}")
+                prep = run_prepare_sendable(config)
+                st.success(
+                    f"مستورد: {result['imported']} | بإيميل: {result['with_email']} | "
+                    f"جاهز: {prep['pending_count']}"
+                )
                 st.rerun()
             else:
                 st.error("ملف companies.csv غير موجود")
-    else:
-        st.info("لا توجد شركات — استورد من data/companies.csv")
+
+        if st.button("🌐 استخراج دومينات", use_container_width=False):
+            with st.spinner("استنتاج إيميلات من المواقع..."):
+                result = discover_domains.enrich_all_pending(config)
+                prep = run_prepare_sendable(config)
+                st.success(f"وُجد: {result.get('email_found', 0)} | جاهز: {prep['pending_count']}")
+                st.rerun()
+
+        if dry_run:
+            st.warning("⚠️ Dry-Run مفعّل — التقديم لن يُرسل فعلياً حتى توقفه من الشريط الجانبي")
+
+        with st.expander("تفاصيل المصادر"):
+            for src, label in discover_multi.SOURCE_LABELS.items():
+                st.write(f"**{label}** — {'مفعّل' if src in config.get('discovery', {}).get('sources', []) else 'معطّل'}")
+            st.markdown("""
+            **سير العمل المقترح:**
+            1. **اكتشاف شامل** — يجلب شركات جديدة ويستخرج إيميلاتها
+            2. **تقديم CV للجديد** — يرسل للشركات الجاهزة فقط (ضمن 50/يوم)
+            3. **اكتشاف + تقديم** — دورة كاملة في زر واحد
+            4. بعد الإرسال الناجح → تظهر في تبويب **تم الإرسال فعلياً**
+            """)
+
+    with sub_all:
+        f1, f2, f3 = st.columns(3)
+        cities = ["الكل", "Jeddah", "Abha"]
+        filter_city = f1.selectbox("المدينة", cities, key="all_city_filter")
+        filter_status = f2.selectbox("الحالة", ["الكل"] + list(STATUS_LABELS.keys()), key="all_status_filter")
+        search = f3.text_input("بحث بالاسم", key="all_search")
+
+        city_param = None if filter_city == "الكل" else filter_city
+        status_param = None if filter_status == "الكل" else filter_status
+        companies = db.get_companies(status=status_param, city=city_param)
+
+        if search.strip():
+            companies = [c for c in companies if search.lower() in c["company_name"].lower()]
+
+        if companies:
+            rows = [{
+                "ID": c["id"],
+                "الشركة": c["company_name"],
+                "المدينة": c.get("city", ""),
+                "القطاع": c.get("sector", ""),
+                "المصدر": SOURCE_LABELS.get(c.get("discovery_source", ""), c.get("discovery_source", "—")),
+                "الإيميل": c.get("primary_email", "—"),
+                "الحالة": status_badge(c.get("status", "")),
+                "الموقع": c.get("website", ""),
+            } for c in companies]
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.caption(f"عرض {len(companies)} شركة | جاهز للإرسال: {len(sendable)}")
+        else:
+            st.info("لا توجد شركات — استخدم تبويب «اكتشاف متعدد المصادر»")
+
+# ── Tab: Delivery Tracking ───────────────────────────────────────
+with tab_delivery:
+    st.header("📬 تتبع تسليم CV")
+    st.caption("مسارات واضحة: مُستلم | مُرسل | معلق | لم يُرسل | فشل | بدون إيميل")
+
+    target_cities = config.get("automation", {}).get("target_cities", ["Jeddah", "Abha"])
+    delivery_tracking.sync_pipeline(target_cities)
+    pipeline = delivery_tracking.get_pipeline_summary(target_cities)
+
+    dm1, dm2, dm3, dm4, dm5, dm6 = st.columns(6)
+    dm1.metric("✅ مُستلم", pipeline["delivered"])
+    dm2.metric("📤 مُرسل", pipeline["sent"])
+    dm3.metric("⏳ معلق", pipeline["pending"])
+    dm4.metric("📭 لم يُرسل", pipeline["not_sent"])
+    dm5.metric("❌ فشل", pipeline["failed"])
+    dm6.metric("🚫 بدون إيميل", pipeline["no_email"])
+
+    st.markdown("---")
+    tr_delivered, tr_sent, tr_pending, tr_not_sent, tr_failed, tr_no_email = st.tabs([
+        "✅ مُستلم",
+        "📤 مُرسل (بانتظار تأكيد)",
+        "⏳ معلق",
+        "📭 لم يُرسل",
+        "❌ فشل",
+        "🚫 بدون إيميل",
+    ])
+
+    def _company_rows(items: list) -> list:
+        return [{
+            "الشركة": c.get("company_name", ""),
+            "الإيميل": c.get("email", c.get("primary_email", "—")),
+            "المدينة": c.get("city", ""),
+            "المصدر": SOURCE_LABELS.get(c.get("discovery_source", ""), c.get("discovery_source", "—")),
+        } for c in items]
+
+    with tr_delivered:
+        items = pipeline["delivered_list"]
+        if items:
+            st.dataframe(pd.DataFrame([{
+                "الشركة": r["company_name"],
+                "الإيميل": r["email"],
+                "المدينة": r.get("city", ""),
+                "أُرسل": r.get("sent_at", ""),
+                "استُلم": r.get("delivered_at", "—"),
+                "CV": "✅" if r.get("cv_attached") else "—",
+            } for r in items]), use_container_width=True, hide_index=True)
+        else:
+            st.info("لا توجد رسائل مؤكدة الاستلام — يمكنك تأكيد الاستلام من تبويب «مُرسل»")
+
+    with tr_sent:
+        items = pipeline["sent_list"]
+        if items:
+            st.dataframe(pd.DataFrame([{
+                "ID": r["company_id"],
+                "الشركة": r["company_name"],
+                "الإيميل": r["email"],
+                "المدينة": r.get("city", ""),
+                "تاريخ الإرسال": r.get("sent_at", ""),
+                "CV": "✅" if r.get("cv_attached", 1) else "—",
+            } for r in items]), use_container_width=True, hide_index=True)
+            st.caption("إذا وصل الرد أو تأكدت من الاستلام، اختر الشركة واضغط تأكيد")
+            confirm_opts = {
+                f"{r['company_name']} — {r['email']}": r["company_id"]
+                for r in items
+            }
+            sel_del = st.selectbox("تأكيد استلام", ["—"] + list(confirm_opts.keys()), key="confirm_delivered")
+            if sel_del != "—" and st.button("✅ تأكيد استلام CV", key="btn_confirm_delivered"):
+                cid = confirm_opts[sel_del]
+                row = next(r for r in items if r["company_id"] == cid)
+                delivery_tracking.mark_company_delivered(cid, row.get("outreach_log_id"))
+                st.success(f"تم تأكيد استلام CV لـ {sel_del.split(' — ')[0]}")
+                st.rerun()
+        else:
+            st.info("لا توجد رسائل مُرسلة بانتظار التأكيد")
+
+    with tr_pending:
+        items = pipeline["pending_list"]
+        if items:
+            st.dataframe(pd.DataFrame([{
+                "الشركة": r["company_name"],
+                "الإيميل": r["email"],
+                "الحالة": delivery_tracking.label(r.get("status", "")),
+                "محاولات": r.get("attempts", 0),
+                "آخر تحديث": r.get("updated_at", ""),
+            } for r in items]), use_container_width=True, hide_index=True)
+            if st.button("📤 إرسال المعلّق الآن", type="primary", key="send_pending_batch"):
+                result = run_apply_new(config)
+                st.success(f"أُرسل: {result['sent']} | فشل: {result['failed']}")
+                st.rerun()
+        else:
+            st.info("لا توجد رسائل معلقة — شغّل اكتشافاً جديداً أو انتظر الحد اليومي")
+
+    with tr_not_sent:
+        items = pipeline["not_sent_list"]
+        if items:
+            st.dataframe(pd.DataFrame(_company_rows(items)), use_container_width=True, hide_index=True)
+            if st.button("📤 تقديم CV للجميع", type="primary", key="send_not_sent_batch"):
+                result = run_apply_new(config)
+                st.success(f"أُرسل: {result['sent']} | فشل: {result['failed']}")
+                st.rerun()
+        else:
+            st.success("جميع الشركات ذات الإيميل تم التعامل معها")
+
+    with tr_failed:
+        items = pipeline["failed_list"]
+        if items:
+            st.dataframe(pd.DataFrame([{
+                "الشركة": r.get("company_name", ""),
+                "الإيميل": r.get("email", ""),
+                "التاريخ": r.get("sent_at", ""),
+                "الخطأ": r.get("error_message", ""),
+            } for r in items]), use_container_width=True, hide_index=True)
+            retry_opts = {
+                f"{r.get('company_name', '')} — {r.get('email', '')}": r["company_id"]
+                for r in items
+            }
+            sel_retry = st.selectbox("إعادة المحاولة", ["—"] + list(retry_opts.keys()), key="retry_failed")
+            if sel_retry != "—" and st.button("🔄 إعادة إرسال", key="btn_retry_failed"):
+                cid = retry_opts[sel_retry]
+                delivery_tracking.retry_failed(cid, target_cities)
+                result = send_email.send_to_company(cid, config, skip_approval=True)
+                if result.get("success"):
+                    st.success("تمت إعادة الإرسال")
+                else:
+                    st.error(result.get("error", "فشل"))
+                st.rerun()
+        else:
+            st.success("لا توجد محاولات فاشلة")
+
+    with tr_no_email:
+        items = pipeline["no_email_list"]
+        if items:
+            st.dataframe(pd.DataFrame([{
+                "الشركة": c["company_name"],
+                "المدينة": c.get("city", ""),
+                "الموقع": c.get("website", "—"),
+                "الحالة": status_badge(c.get("status", "")),
+            } for c in items]), use_container_width=True, hide_index=True)
+            if st.button("📧 استخراج إيميلات", key="extract_no_email"):
+                result = run_extraction(config)
+                st.success(f"وُجد: {result['email_found']} | بدون: {result['no_email']}")
+                st.rerun()
+        else:
+            st.success("جميع الشركات لديها إيميل أو تم التعامل معها")
 
 # ── Tab: Send ────────────────────────────────────────────────────
 with tab_send:
@@ -314,16 +659,18 @@ with tab_send:
 
 # ── Tab: Log ─────────────────────────────────────────────────────
 with tab_log:
-    st.header("📋 سجل الإرسال")
+    st.header("📋 سجل الإرسال التفصيلي")
     logs = db.get_outreach_log(limit=200)
     if logs:
         rows = [{
             "الشركة": l.get("company_name", ""),
             "الإيميل": l.get("email", ""),
             "التاريخ": l.get("sent_at", ""),
+            "التسليم": delivery_tracking.label(l.get("delivery_status", db.DELIVERY_SENT)),
             "الحالة": "✅" if not l.get("error_message") else "❌",
             "Dry-Run": "نعم" if l.get("dry_run") else "لا",
             "خطأ": l.get("error_message", "") or "—",
+            "Message-ID": l.get("provider_message_id", "") or "—",
         } for l in logs]
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     else:
