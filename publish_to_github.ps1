@@ -1,7 +1,7 @@
 # BetterJob - publish to new private GitHub repo
 $ErrorActionPreference = "Stop"
-$RepoName = "betterjob-survey-outreach"
-$RepoUrl = "https://github.com/Jonah-hex/$RepoName.git"
+$RepoName = "betterjob"
+$RepoUrl = "https://github.com/Jonah-hex/betterjob.git"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Gh = if (Test-Path "$env:TEMP\gh-cli\bin\gh.exe") { "$env:TEMP\gh-cli\bin\gh.exe" } elseif (Get-Command gh -ErrorAction SilentlyContinue) { "gh" } else { $null }
 

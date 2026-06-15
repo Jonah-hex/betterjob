@@ -174,7 +174,7 @@ betterjob/
 
 ## المزامنة عبر GitHub (جهاز آخر)
 
-المستودع المستهدف: `https://github.com/Jonah-hex/betterjob-survey-outreach` (خاص)
+المستودع: `https://github.com/Jonah-hex/betterjob`
 
 ### رفع من هذا الجهاز
 
@@ -188,8 +188,8 @@ cd Desktop\betterjob
 ### استنساخ على جهازك الآخر
 
 ```bash
-git clone https://github.com/Jonah-hex/betterjob-survey-outreach.git
-cd betterjob-survey-outreach
+git clone https://github.com/Jonah-hex/betterjob.git
+cd betterjob
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
