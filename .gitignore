@@ -9,5 +9,6 @@ __pycache__/
 venv/
 .streamlit/secrets.toml
 node_modules/
+*.bundle
 package.json
 package-lock.json
