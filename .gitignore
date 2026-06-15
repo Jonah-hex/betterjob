@@ -10,5 +10,7 @@ venv/
 .streamlit/secrets.toml
 node_modules/
 *.bundle
+gh_auth_log.txt
+*.pdf.bak
 package.json
 package-lock.json
