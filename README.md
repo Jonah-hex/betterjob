@@ -169,3 +169,33 @@ betterjob/
 | العضوية | الهيئة السعودية للمهندسين — مساح عام |
 
 عدّل `config.yaml` إذا احتجت تحديث أي بيانات.
+
+---
+
+## المزامنة عبر GitHub (جهاز آخر)
+
+المستودع المستهدف: `https://github.com/Jonah-hex/betterjob-survey-outreach` (خاص)
+
+### رفع من هذا الجهاز
+
+```powershell
+cd Desktop\betterjob
+.\publish_to_github.ps1
+```
+
+يفتح صفحة إنشاء مستودع جديد على GitHub — أنشئه **بدون** README ثم ينتظر السكربت ويرفع الكود تلقائياً.
+
+### استنساخ على جهازك الآخر
+
+```bash
+git clone https://github.com/Jonah-hex/betterjob-survey-outreach.git
+cd betterjob-survey-outreach
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env
+```
+
+ثم املأ `.env` (Brevo SMTP) وشغّل `streamlit run app.py`.
+
+> **ملاحظة:** `.env` و `data/outreach.db` غير مرفوعة لأسباب أمنية. انسخ `.env` يدوياً أو أعد إعداد المفاتيح على الجهاز الجديد.
