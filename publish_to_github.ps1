@@ -17,8 +17,12 @@ if (git status --porcelain) {
 }
 
 function Test-RepoReady {
-    git ls-remote $RepoUrl 2>$null | Out-Null
-    return ($LASTEXITCODE -eq 0)
+    try {
+        git ls-remote $RepoUrl *> $null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
 }
 
 function Push-ToOrigin {
