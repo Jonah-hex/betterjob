@@ -28,8 +28,12 @@ function Push-ToOrigin {
 }
 
 if ($Gh) {
-    & $Gh auth status 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) {
+    $ghOk = $false
+    try {
+        & $Gh auth status *> $null
+        $ghOk = ($LASTEXITCODE -eq 0)
+    } catch { $ghOk = $false }
+    if ($ghOk) {
         Write-Host "Creating repo via gh..." -ForegroundColor Green
         & $Gh repo create $RepoName --private --description "BetterJob survey outreach bot" --source $Root --remote origin --push
         if ($LASTEXITCODE -eq 0) {
