@@ -172,6 +172,38 @@ betterjob/
 
 ---
 
+## BetterJob Pro (استرategie التقديم)
+
+```bash
+streamlit run app_pro.py --server.port 8502
+# أو: run_pro.bat
+```
+
+- **3 تقديمات/يوم × 5 أيام = 15/أسبوع**
+- تخصيص المسمى + Hook + متابعة يوم 3/7/14
+
+---
+
+## نشر على Oracle Cloud (24/7)
+
+لتشغيل الأداة على سيرفر دائم بدلاً من جهازك:
+
+📖 **[deploy/oracle/DEPLOY_ORACLE.md](deploy/oracle/DEPLOY_ORACLE.md)**
+
+```bash
+# على Ubuntu VM (Oracle Always Free)
+git clone https://github.com/Jonah-hex/betterjob.git
+cd betterjob
+chmod +x deploy/oracle/install.sh
+./deploy/oracle/install.sh
+```
+
+- `http://IP/` → BetterJob
+- `http://IP/pro/` → BetterJob Pro
+- محمي بكلمة مرور · Docker · إعادة تشغيل تلقائية
+
+---
+
 ## المزامنة عبر GitHub (جهاز آخر)
 
 المستودع: `https://github.com/Jonah-hex/betterjob`

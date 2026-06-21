@@ -11,6 +11,6 @@ venv/
 node_modules/
 *.bundle
 gh_auth_log.txt
-*.pdf.bak
+deploy/oracle/nginx/.htpasswd
 package.json
 package-lock.json

@@ -1,0 +1,52 @@
+# BetterJob — production (Oracle Cloud / any Linux VPS)
+# Usage: docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  betterjob:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - betterjob_data:/app/data
+      - ./deploy/oracle/streamlit/config_main.toml:/app/.streamlit/config.toml:ro
+    command: >
+      streamlit run app.py
+      --server.port=8501
+      --server.address=0.0.0.0
+      --server.headless=true
+      --browser.gatherUsageStats=false
+    networks: [web]
+
+  betterjob-pro:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - betterjob_data:/app/data
+      - ./deploy/oracle/streamlit/config_pro.toml:/app/.streamlit/config.toml:ro
+    command: >
+      streamlit run app_pro.py
+      --server.port=8502
+      --server.address=0.0.0.0
+      --server.headless=true
+      --browser.gatherUsageStats=false
+    networks: [web]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/oracle/nginx/betterjob.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/oracle/nginx/.htpasswd:/etc/nginx/.htpasswd:ro
+    depends_on:
+      - betterjob
+      - betterjob-pro
+    networks: [web]
+
+volumes:
+  betterjob_data:
+
+networks:
+  web:

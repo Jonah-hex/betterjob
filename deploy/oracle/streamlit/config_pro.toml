@@ -1,0 +1,15 @@
+[server]
+headless = true
+port = 8502
+address = "0.0.0.0"
+baseUrlPath = "pro"
+enableCORS = false
+enableXsrfProtection = true
+maxUploadSize = 10
+
+[browser]
+gatherUsageStats = false
+serverAddress = "0.0.0.0"
+
+[theme]
+base = "light"
