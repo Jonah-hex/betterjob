@@ -17,6 +17,9 @@ SENDABLE_EMAIL_SOURCES = (
     "directory",
     "domain_pattern",
     "google_places",
+    "linkedin",
+    "careers_portal",
+    "deep_search",
 )
 
 # حالات تسليم CV / الإيميل
@@ -172,6 +175,30 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     if "cv_attached" not in sent_cols:
         conn.execute("ALTER TABLE sent_companies ADD COLUMN cv_attached INTEGER DEFAULT 1")
 
+    company_cols = {row[1] for row in conn.execute("PRAGMA table_info(companies)").fetchall()}
+    for col, ddl in (
+        ("linkedin_url", "ALTER TABLE companies ADD COLUMN linkedin_url TEXT"),
+        ("careers_url", "ALTER TABLE companies ADD COLUMN careers_url TEXT"),
+        ("job_url", "ALTER TABLE companies ADD COLUMN job_url TEXT"),
+        ("job_fit_score", "ALTER TABLE companies ADD COLUMN job_fit_score INTEGER DEFAULT 0"),
+    ):
+        if col not in company_cols:
+            conn.execute(ddl)
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS whatsapp_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL,
+            phone TEXT NOT NULL,
+            message TEXT,
+            status TEXT DEFAULT 'opened',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+        )
+        """
+    )
+
 
 def _sync_delivery_from_history(conn: sqlite3.Connection) -> None:
     conn.execute(
@@ -243,6 +270,10 @@ def upsert_company(
     place_types: Optional[list[str]] = None,
     status: str = "discovered",
     discovery_source: Optional[str] = None,
+    linkedin_url: Optional[str] = None,
+    careers_url: Optional[str] = None,
+    job_url: Optional[str] = None,
+    job_fit_score: Optional[int] = None,
     db_path: Path = DB_PATH,
 ) -> tuple[int, bool]:
     """Insert or update company. Returns (id, is_new)."""
@@ -262,6 +293,10 @@ def upsert_company(
                     company_name = ?, city = ?, region = ?, sector = ?,
                     website = COALESCE(?, website), phone = COALESCE(?, phone),
                     place_types = ?, discovery_source = COALESCE(?, discovery_source),
+                    linkedin_url = COALESCE(?, linkedin_url),
+                    careers_url = COALESCE(?, careers_url),
+                    job_url = COALESCE(?, job_url),
+                    job_fit_score = COALESCE(?, job_fit_score),
                     updated_at = ?
                 WHERE google_place_id = ?
                 """,
@@ -274,6 +309,10 @@ def upsert_company(
                     phone,
                     types_json,
                     discovery_source,
+                    linkedin_url,
+                    careers_url,
+                    job_url,
+                    job_fit_score,
                     now,
                     google_place_id,
                 ),
@@ -285,8 +324,9 @@ def upsert_company(
             INSERT INTO companies (
                 company_name, city, region, sector, website, phone,
                 google_place_id, place_types, status, discovery_source,
+                linkedin_url, careers_url, job_url, job_fit_score,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 company_name,
@@ -299,6 +339,10 @@ def upsert_company(
                 types_json,
                 status,
                 discovery_source or "unknown",
+                linkedin_url,
+                careers_url,
+                job_url,
+                job_fit_score or 0,
                 now,
                 now,
             ),
@@ -545,7 +589,8 @@ def get_sendable_companies(
     """Companies with verified email, not yet sent."""
     src_placeholders = ",".join("?" * len(SENDABLE_EMAIL_SOURCES))
     query = f"""
-        SELECT c.*, e.id AS email_id, e.email, e.source AS email_source
+        SELECT c.*, e.id AS email_id, e.email, e.source AS email_source,
+               e.verified AS email_verified
         FROM companies c
         JOIN emails e ON e.company_id = c.id AND e.is_primary = 1
         WHERE c.status IN ('email_found', 'approved')
@@ -816,15 +861,36 @@ def get_sent_by_delivery_status(
 def get_failed_deliveries(
     cities: Optional[list[str]] = None,
     limit: int = 200,
+    unresolved_only: bool = True,
     db_path: Path = DB_PATH,
 ) -> list[dict[str, Any]]:
-    query = """
-        SELECT o.*, c.company_name, c.city, e.email
-        FROM outreach_log o
-        JOIN companies c ON c.id = o.company_id
-        LEFT JOIN emails e ON e.id = o.email_id
-        WHERE o.dry_run = 0 AND o.error_message IS NOT NULL
-    """
+    """Failed sends. By default only unresolved: latest real attempt still failed."""
+    if unresolved_only:
+        query = """
+            WITH latest AS (
+                SELECT company_id, email_id, MAX(sent_at) AS last_sent
+                FROM outreach_log
+                WHERE dry_run = 0
+                GROUP BY company_id, email_id
+            )
+            SELECT o.*, c.company_name, c.city, e.email
+            FROM outreach_log o
+            JOIN latest l
+                ON o.company_id = l.company_id
+                AND o.email_id = l.email_id
+                AND o.sent_at = l.last_sent
+            JOIN companies c ON c.id = o.company_id
+            LEFT JOIN emails e ON e.id = o.email_id
+            WHERE o.dry_run = 0 AND o.error_message IS NOT NULL
+        """
+    else:
+        query = """
+            SELECT o.*, c.company_name, c.city, e.email
+            FROM outreach_log o
+            JOIN companies c ON c.id = o.company_id
+            LEFT JOIN emails e ON e.id = o.email_id
+            WHERE o.dry_run = 0 AND o.error_message IS NOT NULL
+        """
     params: list[Any] = []
     if cities:
         placeholders = ",".join("?" * len(cities))
@@ -889,3 +955,46 @@ def get_no_email_companies(
     params.append(limit)
     with get_connection(db_path) as conn:
         return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+
+def update_company_job_fit(company_id: int, score: int, db_path: Path = DB_PATH) -> None:
+    with get_connection(db_path) as conn:
+        conn.execute(
+            "UPDATE companies SET job_fit_score = ?, updated_at = ? WHERE id = ?",
+            (score, _utcnow(), company_id),
+        )
+
+
+def log_whatsapp(
+    company_id: int,
+    phone: str,
+    message: str,
+    status: str = "opened",
+    db_path: Path = DB_PATH,
+) -> int:
+    now = _utcnow()
+    with get_connection(db_path) as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO whatsapp_log (company_id, phone, message, status, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (company_id, phone, message, status, now),
+        )
+        return cur.lastrowid or 0
+
+
+def get_whatsapp_log(limit: int = 100, db_path: Path = DB_PATH) -> list[dict[str, Any]]:
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT w.*, c.company_name
+            FROM whatsapp_log w
+            JOIN companies c ON c.id = w.company_id
+            ORDER BY w.created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+

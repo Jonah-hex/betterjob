@@ -20,6 +20,7 @@ import httpx
 import compose
 import database as db
 import delivery_tracking as tracking
+import outreach_quality
 
 BASE_DIR = Path(__file__).parent
 ENV_PATH = BASE_DIR / ".env"
@@ -405,6 +406,52 @@ def send_test_email(
         return {"success": False, "error": str(exc)}
 
 
+def send_production_preview(
+    to_email: str,
+    config: Optional[dict[str, Any]] = None,
+    company_name: str = "شركة مقاولات / Construction Co.",
+    city: str = "Jeddah",
+    sector: str = "Construction",
+) -> dict[str, Any]:
+    """Send production-identical email (no TEST prefix) for HR inbox verification."""
+    config = config or load_config()
+    attachments = _resolve_attachments(config)
+    if not attachments:
+        return {"success": False, "error": "cv.pdf غير موجود — ولّد ATS من تبويب CV أو ارفع نسختك"}
+
+    sample_company = {
+        "company_name": company_name,
+        "city": city,
+        "sector": sector,
+    }
+    composed = compose.compose_for_company(sample_company, config)
+
+    try:
+        message_id = _dispatch_send(
+            to_email,
+            composed["subject"],
+            composed["body_ar"],
+            composed["body_en"],
+            config,
+            attachments,
+        )
+        return {
+            "success": True,
+            "message_id": message_id,
+            "to": to_email,
+            "subject": composed["subject"],
+            "attachments": [
+                {
+                    "name": _attachment_filename(p, config),
+                    "size_kb": p.stat().st_size // 1024,
+                }
+                for p in attachments
+            ],
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
 def can_send_today(config: dict[str, Any]) -> tuple[bool, str]:
     max_per_day = config.get("sending", {}).get("max_per_day", 12)
     sent = db.count_sent_today()
@@ -444,6 +491,19 @@ def send_to_company(
 
     if email_rec["source"] == "guessed":
         return {"success": False, "error": "إيميل مُخمّن — لا يُرسل تلقائياً"}
+
+    if not outreach_quality.is_auto_send_allowed(
+        email_rec["email"], email_rec["source"], config,
+        verified=bool(email_rec.get("verified")),
+    ):
+        tier = outreach_quality.classify_email(
+            email_rec["email"], email_rec["source"],
+            verified=bool(email_rec.get("verified")),
+        )
+        return {
+            "success": False,
+            "error": f"إيميل ضعيف ({tier}) — {email_rec['email']} — فضّل hr@ أو careers@",
+        }
 
     if db.already_sent_to_email(company_id, email_rec["id"]):
         return {"success": False, "error": "تم الإرسال مسبقاً لهذا الإيميل"}
@@ -554,7 +614,10 @@ def send_approved_batch(config: Optional[dict[str, Any]] = None) -> list[dict[st
     return results
 
 
-def auto_send_all(config: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+def auto_send_all(
+    config: Optional[dict[str, Any]] = None,
+    on_progress: Optional[Any] = None,
+) -> dict[str, Any]:
     """Auto-approve and send to all sendable companies up to daily limit."""
     config = config or load_config()
     auto = config.get("automation", {})
@@ -567,15 +630,23 @@ def auto_send_all(config: Optional[dict[str, Any]] = None) -> dict[str, Any]:
 
     max_per_day = config.get("sending", {}).get("max_per_day", 12)
     remaining = max_per_day - db.count_sent_today()
-    sendable = db.get_sendable_companies(cities)[:remaining]
+    raw_sendable = db.get_sendable_companies(cities)
+    sendable, skipped_quality = outreach_quality.prioritize_sendable(raw_sendable, config)
+    sendable = sendable[:remaining]
 
     results = []
     sent = 0
     failed = 0
+    total = len(sendable)
 
-    for company in sendable:
+    for i, company in enumerate(sendable, 1):
         if db.count_sent_today() >= max_per_day and not config.get("sending", {}).get("dry_run"):
             break
+        if on_progress:
+            on_progress(
+                i, total,
+                f"إرسال {i}/{total}: {company.get('company_name', '')[:40]} → {company.get('email', '')}",
+            )
         result = send_to_company(company["id"], config, skip_approval=True)
         results.append({
             "company": company["company_name"],
@@ -593,6 +664,7 @@ def auto_send_all(config: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     return {
         "sent": sent,
         "failed": failed,
+        "skipped_quality": len(skipped_quality),
         "remaining_today": max(0, max_per_day - db.count_sent_today()),
         "details": results,
     }

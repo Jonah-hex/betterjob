@@ -12,6 +12,7 @@ import database as db
 import discover
 import discover_domains
 import discover_directory
+import discover_deep
 import discover_overpass
 import import_csv
 from pathlib import Path
@@ -25,6 +26,9 @@ SOURCE_LABELS = {
     "overpass": "OpenStreetMap",
     "directory": "دليل ويب / بحث",
     "domains": "استنتاج من الدومين",
+    "linkedin": "LinkedIn",
+    "careers_portal": "بوابات توظيف",
+    "deep_search": "بحث HR عميق",
 }
 
 
@@ -45,7 +49,7 @@ def _enabled_sources(config: dict[str, Any]) -> list[str]:
         return ["google"]
     if provider == "overpass":
         return ["overpass"]
-    return ["csv", "google", "overpass", "directory", "domains"]
+    return ["csv", "google", "overpass", "directory", "domains", "linkedin", "careers_portal", "deep_search"]
 
 
 def discover_all_sources(config: Optional[dict[str, Any]] = None) -> dict[str, Any]:
@@ -105,6 +109,25 @@ def discover_all_sources(config: Optional[dict[str, Any]] = None) -> dict[str, A
             summary["total_new"] += stats.get("email_found", 0)
         except Exception as exc:
             summary["by_source"]["domains"] = {"errors": [str(exc)]}
+
+    deep_sources = [s for s in ("linkedin", "careers_portal", "deep_search") if s in sources]
+    if deep_sources:
+        try:
+            results = discover_deep.discover_target_cities(config)
+            new_count = sum(
+                r.get("new", 0) for r in results.values() if isinstance(r, dict)
+            )
+            summary["by_source"]["deep"] = results
+            summary["sources_run"].extend(deep_sources)
+            summary["total_new"] += new_count
+        except Exception as exc:
+            summary["by_source"]["deep"] = {"errors": [str(exc)]}
+
+    try:
+        import job_fit
+        job_fit.sync_all_scores(config)
+    except Exception:
+        pass
 
     return summary
 

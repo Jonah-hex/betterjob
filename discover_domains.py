@@ -10,7 +10,8 @@ import yaml
 
 import database as db
 
-PRIORITY_PREFIXES = ("hr", "careers", "jobs", "recruitment", "info", "contact")
+PRIORITY_PREFIXES = ("hr", "careers", "jobs", "recruitment")
+WEAK_PREFIXES = ("info", "contact", "admin", "sales")
 
 
 def load_config(path: str = "config.yaml") -> dict[str, Any]:

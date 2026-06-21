@@ -37,6 +37,13 @@ discovery:
     - overpass
     - directory
     - domains
+    - linkedin
+    - careers_portal
+    - deep_search
+  deep_sources:
+    - linkedin
+    - careers_portal
+    - deep_search
   max_results_per_query: 40
   allow_domain_emails: true
   language: ar
@@ -143,11 +150,18 @@ email_extraction:
     - hr
     - recruitment
     - jobs
-    - info
   allow_guessed_emails: false
 
+outreach_quality:
+  min_fit_score: 40
+  prioritize_by_fit: true
+  skip_weak_domain_emails: true
+  whatsapp_followup_top: 30
+  whatsapp_min_fit: 50
+  whatsapp_skip_recent_days: 7
+
 sending:
-  max_per_day: 50
+  max_per_day: 100
   delay_seconds_between: 30
   require_manual_approve: false
   dry_run: false
@@ -178,3 +192,17 @@ cv_ats_keywords:
   - GIS
   - Land Surveying
   - General Surveyor
+
+job_discovery:
+  extra_queries:
+    Jeddah:
+      - "مكتب مساحة معتمد جدة"
+      - "شركة مساحة topographic جدة"
+      - "GNSS RTK survey company Jeddah"
+      - "setting out engineer Jeddah contractor"
+    Abha:
+      - "مكتب مساحة أبها"
+      - "survey engineer Asir region"
+
+testing:
+  hr_preview_email: "nader.bmm@gmail.com"

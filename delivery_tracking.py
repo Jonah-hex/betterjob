@@ -1,4 +1,4 @@
-"""CV / email delivery pipeline — track sent, pending, delivered, failed, not sent."""
+"""CV / email delivery pipeline — track sent, pending, failed, not sent."""
 
 from __future__ import annotations
 
@@ -7,14 +7,14 @@ from typing import Any, Optional
 import database as db
 
 _STATUS_LABELS_AR = {
-    "delivered": "✅ مُستلم",
-    "sent": "📤 مُرسل",
-    "pending": "⏳ معلق",
+    "delivered": "✅ تم الإرسال",
+    "sent": "✅ تم الإرسال",
+    "pending": "⏳ معلّق",
     "queued": "⏳ في الطابور",
     "sending": "🔄 جاري الإرسال",
-    "failed": "❌ فشل",
+    "failed": "❌ فشل غير محلول",
     "bounced": "↩️ مرتد",
-    "not_sent": "📭 لم يُرسل",
+    "not_sent": "📭 جاهز للإرسال",
     "no_email": "🚫 بدون إيميل",
 }
 
@@ -32,26 +32,22 @@ def get_pipeline_summary(cities: Optional[list[str]] = None) -> dict[str, Any]:
     pending = db.get_queue_by_status(db.DELIVERY_PENDING, cities)
     queued = db.get_queue_by_status(db.DELIVERY_QUEUED, cities)
     sending = db.get_queue_by_status(db.DELIVERY_SENDING, cities)
-    delivered = db.get_sent_by_delivery_status(db.DELIVERY_DELIVERED)
-    sent_awaiting = db.get_sent_by_delivery_status(db.DELIVERY_SENT)
+    completed = db.get_sent_companies(limit=5000)
     failed = db.get_failed_deliveries(cities)
     not_sent_ready = db.get_sendable_companies(cities)
     no_email = db.get_no_email_companies(cities)
 
     if cities:
-        delivered = [r for r in delivered if r.get("city") in cities]
-        sent_awaiting = [r for r in sent_awaiting if r.get("city") in cities]
+        completed = [r for r in completed if r.get("city") in cities]
 
     pending_all = pending + queued + sending
     return {
-        "delivered": len(delivered),
-        "sent": len(sent_awaiting),
+        "completed": len(completed),
         "pending": len(pending_all),
         "not_sent": len(not_sent_ready),
         "failed": len(failed),
         "no_email": len(no_email),
-        "delivered_list": delivered,
-        "sent_list": sent_awaiting,
+        "completed_list": completed,
         "pending_list": pending_all,
         "not_sent_list": not_sent_ready,
         "failed_list": failed,
@@ -108,8 +104,10 @@ def on_send_failure(
     )
 
 
-def mark_company_delivered(company_id: int, outreach_log_id: Optional[int] = None) -> None:
+def mark_company_replied(company_id: int, outreach_log_id: Optional[int] = None) -> None:
+    """Optional: HR replied — updates status for follow-up tracking."""
     db.mark_delivered(company_id, outreach_log_id)
+    db.update_company_status(company_id, "replied")
 
 
 def retry_failed(company_id: int, cities: Optional[list[str]] = None) -> bool:
@@ -123,3 +121,6 @@ def retry_failed(company_id: int, cities: Optional[list[str]] = None) -> bool:
     db.update_company_status(company_id, "approved")
     db.update_queue_status(company_id, email_rec["id"], db.DELIVERY_PENDING)
     return True
+
+# Backward compatibility
+mark_company_delivered = mark_company_replied

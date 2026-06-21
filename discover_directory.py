@@ -211,10 +211,9 @@ def discover_city_directory(
 
         if website:
             domain = urlparse(website).netloc.replace("www.", "")
-            if domain and "@" not in domain:
-                guessed = f"info@{domain}"
-                if db.add_email(company_id, guessed, "directory", is_primary=True, verified=False):
-                    db.update_company_status(company_id, "email_found")
+            # لا تخمين إيميل من روابط الدليل — الاستخراج من الموقع لاحقاً
+            if domain and _host_ok(website):
+                pass
 
         if is_new:
             stats["new"] += 1
