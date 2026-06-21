@@ -43,7 +43,7 @@ if [ ! -f deploy/oracle/nginx/.htpasswd ]; then
   HASH="$(openssl passwd -apr1 "$PASS")"
   mkdir -p deploy/oracle/nginx
   printf '%s:%s\n' "$BETTERJOB_USER" "$HASH" > deploy/oracle/nginx/.htpasswd
-  chmod 600 deploy/oracle/nginx/.htpasswd
+  chmod 644 deploy/oracle/nginx/.htpasswd
   echo "Saved deploy/oracle/nginx/.htpasswd"
 fi
 

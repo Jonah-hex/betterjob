@@ -66,21 +66,23 @@ def _attachment_filename(path: Path, config: Optional[dict[str, Any]] = None) ->
 
 
 def _resolve_attachments(config: dict[str, Any]) -> list[Path]:
-    """Attach ATS cv.pdf and uploaded cv_uploaded.pdf when both exist."""
+    """Attach ATS cv.pdf; optional uploaded copy when enabled in config."""
     paths: list[Path] = []
+    sending_cfg = config.get("sending", {})
 
     ats_cv = get_cv_path()
     if ats_cv.exists() and ats_cv.stat().st_size > 0:
         paths.append(ats_cv)
 
-    uploaded_cv = get_uploaded_cv_path()
-    if uploaded_cv.exists() and uploaded_cv.stat().st_size > 0:
-        paths.append(uploaded_cv)
+    if sending_cfg.get("attach_uploaded_cv", False):
+        uploaded_cv = get_uploaded_cv_path()
+        if uploaded_cv.exists() and uploaded_cv.stat().st_size > 0:
+            paths.append(uploaded_cv)
 
     if paths:
         return paths
 
-    for rel in config.get("sending", {}).get("attachments", []):
+    for rel in sending_cfg.get("attachments", []):
         p = BASE_DIR / rel
         if p.exists() and p.stat().st_size > 0:
             paths.append(p)

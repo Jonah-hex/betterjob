@@ -211,13 +211,13 @@ sending:
   max_per_day: 100
   delay_seconds_between: 30
   require_manual_approve: false
+  attach_uploaded_cv: false
   dry_run: false
   attachment_names:
     cv.pdf: "Moh. CV.pdf"
     cv_uploaded.pdf: "Moh. CV Full.pdf"
   attachments:
     - assets/cv/cv.pdf
-    - assets/cv/cv_uploaded.pdf
 
 cv_ats_keywords:
   - Senior Land Surveyor

@@ -8,6 +8,8 @@ services:
     env_file: .env
     volumes:
       - betterjob_data:/app/data
+      - ./.env:/app/.env:ro
+      - ./assets/cv:/app/assets/cv:ro
       - ./deploy/oracle/streamlit/config_main.toml:/app/.streamlit/config.toml:ro
     command: >
       streamlit run app.py
@@ -23,6 +25,8 @@ services:
     env_file: .env
     volumes:
       - betterjob_data:/app/data
+      - ./.env:/app/.env:ro
+      - ./assets/cv:/app/assets/cv:ro
       - ./deploy/oracle/streamlit/config_pro.toml:/app/.streamlit/config.toml:ro
     command: >
       streamlit run app_pro.py
