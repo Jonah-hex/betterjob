@@ -10,7 +10,30 @@ SURVEYOR_KEYWORDS = (
     "survey", "surveyor", "surveying", "مساح", "مساحة", "topographic",
     "total station", "gnss", "rtk", "setting out", "as-built",
     "construction survey", "land survey", "geomatics", "gis",
+    "construction surveyor", "site surveyor", "cadastral", "subdivision",
+    "crew chief", "balady", "etmad", "municipal", "handover",
+    "senior land surveyor", "gis technician", "survey inspector",
+    "parsons", "wsp", "egis", "keo", "dar al riyadh",
 )
+
+
+def _employer_bonus(text: str, config: Optional[dict[str, Any]] = None) -> int:
+    bonus = 0
+    for emp in (config or {}).get("job_discovery", {}).get("priority_employers", []):
+        needles = [str(emp.get("name", "")).lower()]
+        needles.extend(str(k).lower() for k in emp.get("keywords", []))
+        if any(n and n in text for n in needles):
+            bonus += int(emp.get("fit_bonus", 15))
+    return min(bonus, 30)
+
+
+def _profile_keywords(config: Optional[dict[str, Any]] = None) -> tuple[str, ...]:
+    """Base surveyor keywords plus target job titles from config."""
+    extra: list[str] = []
+    for item in (config or {}).get("job_discovery", {}).get("target_job_titles", []):
+        extra.extend(str(k).lower() for k in item.get("keywords_en", []))
+        extra.extend(str(k).lower() for k in item.get("keywords_ar", []))
+    return SURVEYOR_KEYWORDS + tuple(dict.fromkeys(extra))
 
 ENGINEERING_KEYWORDS = (
     "engineering", "engineer", "consultant", "هندس", "استشارات",
@@ -31,7 +54,7 @@ def score_company(company: dict[str, Any], config: Optional[dict[str, Any]] = No
 
     score = 0
 
-    for kw in SURVEYOR_KEYWORDS:
+    for kw in _profile_keywords(config):
         if kw in text:
             score += 12
     for kw in ENGINEERING_KEYWORDS:
@@ -72,6 +95,8 @@ def score_company(company: dict[str, Any], config: Optional[dict[str, Any]] = No
 
     if profile.get("city", "").lower() in text:
         score += 3
+
+    score += _employer_bonus(text, config)
 
     return min(100, score)
 

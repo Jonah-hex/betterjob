@@ -199,6 +199,7 @@ if st.sidebar.button("🔌 اختبار البريد", use_container_width=True,
         st.sidebar.error(result["message"])
 
 st.sidebar.markdown("---")
+st.sidebar.markdown("**🎯 BetterJob Pro:** `run_pro.bat` → http://localhost:8502")
 st.sidebar.info(f"جدة + أبها | {config['sending']['max_per_day']} إيميل/يوم | اكتشاف متعدد المصادر")
 
 # ── Tabs ─────────────────────────────────────────────────────────

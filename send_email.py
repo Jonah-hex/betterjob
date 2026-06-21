@@ -577,6 +577,15 @@ def send_to_company(
             cv_attached=True,
         )
         tracking.on_send_success(company_id, email_rec["id"], log_id, composed["subject"])
+        if config.get("application_strategy", {}).get("enabled"):
+            try:
+                import application_strategy
+
+                application_strategy.record_successful_application(
+                    company, log_id, composed["subject"], config
+                )
+            except Exception:
+                pass
 
         delay = sending_cfg.get("delay_seconds_between", 45)
         time.sleep(delay)

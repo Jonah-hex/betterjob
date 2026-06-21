@@ -3,6 +3,9 @@ profile:
   full_name_ar: "محمد باسل محمود يونس"
   title: "General Land Surveyor"
   title_ar: "مساح عام"
+  apply_as_titles:
+    - "Senior Land Surveyor"
+    - "General Land Surveyor"
   years_experience: 12
   total_station_brands: "Leica, Trimble, Topcon"
   software: "AutoCAD, GPS, Total Station, Level, Excel, GIS"
@@ -61,6 +64,14 @@ regions:
       - "شركات مساحة جدة"
       - "مكتب هندسي جدة"
       - "مقاولات بناء جدة"
+      - "مساح موقع جدة"
+      - "مساح إنشائي جدة"
+      - "مهندس رفع جدة"
+      - "مكتب مساحة معتمد جدة"
+      - "تقسيم أراضي جدة"
+      - "مساح GIS بلدي جدة"
+      - "مقاولات إسكان جدة"
+      - "مساح As-Built جدة"
     queries_en:
       - "construction company Jeddah Saudi Arabia"
       - "civil engineering contractor Jeddah"
@@ -70,6 +81,14 @@ regions:
       - "infrastructure contractor Jeddah"
       - "building contractor Jeddah"
       - "surveying engineering Jeddah"
+      - "construction surveyor company Jeddah"
+      - "site surveyor contractor Jeddah"
+      - "setting out engineer Jeddah"
+      - "cadastral land survey Jeddah"
+      - "as-built surveyor Jeddah"
+      - "municipal GIS survey Jeddah"
+      - "Ministry of Housing contractor survey Jeddah"
+      - "survey crew chief Jeddah"
   abha:
     label_ar: "أبها"
     cities: [Abha]
@@ -81,6 +100,12 @@ regions:
       - "شركات مساحة أبها"
       - "مكتب هندسي أبها"
       - "مقاولات عسير"
+      - "مساح موقع أبها"
+      - "مساح إنشائي أبها"
+      - "مهندس رفع أبها"
+      - "مكتب مساحة معتمد أبها"
+      - "تقسيم أراضي أبها"
+      - "مقاولات إسكان أبها"
     queries_en:
       - "construction company Abha Saudi Arabia"
       - "engineering consultant Abha"
@@ -89,6 +114,10 @@ regions:
       - "general contractor Abha Asir"
       - "infrastructure contractor Abha"
       - "building contractor Abha"
+      - "construction surveyor Abha"
+      - "site surveyor Asir region"
+      - "setting out engineer Abha"
+      - "topographic survey company Abha"
   western:
     label_ar: "المنطقة الغربية"
     cities: [Jeddah, Makkah, Taif, Madinah, Yanbu]
@@ -124,10 +153,28 @@ filters:
     - construction
     - engineering
     - survey
+    - surveying
+    - surveyor
     - infrastructure
+    - setting out
+    - topographic
+    - cadastral
+    - geomatics
+    - gis
+    - as-built
+    - balady
+    - etmak
+    - housing
+    - municipality
     - مقاول
     - هندس
     - مساح
+    - مساحة
+    - رفع
+    - طبوغراف
+    - تقسيم
+    - بلدي
+    - إسكان
     - انشاء
     - إنشاء
     - استشارات
@@ -173,12 +220,25 @@ sending:
     - assets/cv/cv_uploaded.pdf
 
 cv_ats_keywords:
+  - Senior Land Surveyor
   - Total Station
   - Setting Out
   - Topographic Survey
   - As-Built
   - Control Points
   - Construction Survey
+  - Construction Surveyor
+  - Site Surveyor
+  - Survey Engineer
+  - Land Survey Technician
+  - GIS Technician
+  - Survey Inspector
+  - Cadastral Survey
+  - Cadastral Surveyor
+  - Land Subdivision
+  - Municipal GIS
+  - Survey Crew Chief
+  - Geomatics
   - QA/QC
   - AutoCAD
   - Coordinate Systems
@@ -190,19 +250,332 @@ cv_ats_keywords:
   - GPS
   - Level
   - GIS
+  - Balady
+  - Etmad
   - Land Surveying
   - General Surveyor
 
 job_discovery:
+  # ترتيب مبني على واقع السوق السعودي 2025–2026 + ملاءمة 12 سنة خبرة + إقامة قابلة للتحويل
+  market_notes:
+    primary_target: "Senior Land Surveyor — معظم الإعلانات 10+ سنوات"
+    overlooked_roles:
+      - GIS Technician
+      - Survey Inspector
+      - Cadastral Surveyor
+    top_hiring_employers:
+      - Dar Al Riyadh
+      - Parsons
+      - KEO
+      - WSP
+      - Egis
+    iqama_note: "الشركات ذات الأولوية تقبل إقامة قابلة للتحويل"
+
+  priority_employers:
+    - name: "Dar Al Riyadh"
+      keywords: [dar al riyadh, dar al-riyadh, دار الرياض]
+      fit_bonus: 20
+      transferable_iqama: true
+      search_queries:
+        - 'site:linkedin.com/jobs "Dar Al Riyadh" surveyor Saudi Arabia'
+        - 'site:glassdoor.com "Dar Al Riyadh" land surveyor'
+        - '"Dar Al Riyadh" careers hr surveyor Jeddah'
+        - 'site:bayt.com "Dar Al Riyadh" surveyor'
+    - name: "Parsons"
+      keywords: [parsons]
+      fit_bonus: 20
+      transferable_iqama: true
+      search_queries:
+        - 'site:linkedin.com/jobs Parsons surveyor Saudi Arabia'
+        - 'site:glassdoor.com Parsons land surveyor Jeddah'
+        - 'Parsons Saudi Arabia careers surveyor'
+    - name: "KEO"
+      keywords: [keo international, keo consultants, keo]
+      fit_bonus: 18
+      transferable_iqama: true
+      search_queries:
+        - 'site:linkedin.com/jobs KEO surveyor Saudi'
+        - 'KEO International consultants land surveyor careers'
+        - 'site:bayt.com KEO surveyor Jeddah'
+    - name: "WSP"
+      keywords: [wsp, wsp saudi, wsp middle east]
+      fit_bonus: 18
+      transferable_iqama: true
+      search_queries:
+        - 'site:linkedin.com/jobs WSP surveyor Saudi Arabia'
+        - 'WSP Golder land surveyor Jeddah careers'
+        - 'site:indeed.com WSP surveyor Saudi'
+    - name: "Egis"
+      keywords: [egis, egis saudi, egis group]
+      fit_bonus: 18
+      transferable_iqama: true
+      search_queries:
+        - 'site:linkedin.com/jobs Egis surveyor Saudi Arabia'
+        - 'Egis Saudi Arabia land surveyor careers'
+        - 'site:gulftalent.com Egis surveyor'
+
+  target_job_titles:
+    - rank: 1
+      priority: highest
+      title_en: "Senior Land Surveyor"
+      title_ar: "مساح أراضي أول / Senior Land Surveyor"
+      min_experience_years: 10
+      keywords_en: [senior land surveyor, senior surveyor, chief land surveyor]
+      keywords_ar: [مساح أراضي أول, مساح أول, senior land surveyor]
+      notes: "الأسرع رداً — تشترط 10+ سنوات وأنت 12 سنة"
+    - rank: 2
+      priority: high
+      title_en: "Construction Surveyor / Site Surveyor"
+      title_ar: "مساح موقع / مساح إنشائي"
+      keywords_en: [construction surveyor, site surveyor, construction survey]
+      keywords_ar: [مساح موقع, مساح إنشائي, مساحة إنشائية]
+    - rank: 3
+      priority: high
+      title_en: "Setting Out Engineer / Survey Engineer"
+      title_ar: "مهندس/مساح رفع"
+      keywords_en: [setting out engineer, survey engineer, setting out surveyor]
+      keywords_ar: [مهندس رفع, مساح رفع, رفع إنشائي]
+    - rank: 4
+      priority: overlooked
+      overlooked: true
+      title_en: "Cadastral Surveyor"
+      title_ar: "مساح تقسيم/حدود/صكوك"
+      keywords_en: [cadastral surveyor, land subdivision, boundary demarcation]
+      keywords_ar: [مساح تقسيم, تقسيم أراضي, مساح حدود, صكوك]
+      notes: "كثير المساحين يغفلونها — مهاراتك جاهزة (7+ سنوات استشارات)"
+    - rank: 5
+      priority: overlooked
+      overlooked: true
+      title_en: "GIS Technician"
+      title_ar: "فني GIS / مساح GIS"
+      keywords_en: [GIS technician, GIS survey technician, geospatial technician]
+      keywords_ar: [فني GIS, مساح GIS, GIS بلدي]
+      notes: "مغفولة — خبرة فرسان + Balady/Etmad تكفي بدون تطوير إضافي"
+    - rank: 6
+      priority: overlooked
+      overlooked: true
+      title_en: "Survey Inspector"
+      title_ar: "مراقب/مفتش مساحة"
+      keywords_en: [survey inspector, surveying inspector, QA survey inspector]
+      keywords_ar: [مفتش مساحة, مراقب مساحة, QA/QC مساحة]
+      notes: "مغفولة — QA/QC + As-Built + Red Line في سيرتك"
+    - rank: 7
+      priority: medium
+      title_en: "Land Survey Technician (SCE)"
+      title_ar: "فني مساحة (هيئة المهندسين)"
+      keywords_en: [land survey technician, SCE surveyor, certified survey office]
+      keywords_ar: [فني مساحة, مساح معتمد, مكتب مساحة معتمد]
+    - rank: 8
+      priority: medium
+      title_en: "Municipal GIS Survey Officer"
+      title_ar: "مساح GIS بلدي / رفع بلدية"
+      keywords_en: [municipal GIS survey, balady survey, municipality surveyor]
+      keywords_ar: [مساح GIS, مساح بلدي, رفع بلدية]
+    - rank: 9
+      priority: medium
+      title_en: "As-Built Surveyor / Handover Documentation"
+      title_ar: "مساح As-Built / تسليم"
+      keywords_en: [as-built surveyor, handover survey, shop drawing survey]
+      keywords_ar: [مساح As-Built, as-built, تسليم مخططات]
+    - rank: 10
+      priority: medium
+      title_en: "Infrastructure / Topographic Surveyor"
+      title_ar: "مساح طرق/طبوغرافي"
+      keywords_en: [road surveyor, infrastructure surveyor, topographic surveyor]
+      keywords_ar: [مساح طرق, مساح طبوغرافي, بنية تحتية]
+
   extra_queries:
     Jeddah:
+      - "Senior Land Surveyor jobs Jeddah"
+      - "Dar Al Riyadh surveyor careers"
+      - "Parsons land surveyor Jeddah"
+      - "WSP surveyor Saudi Arabia careers"
+      - "KEO surveyor Jeddah"
+      - "Egis land surveyor Saudi"
+      - "GIS technician survey Jeddah"
+      - "survey inspector Jeddah"
+      - "cadastral surveyor Jeddah office"
       - "مكتب مساحة معتمد جدة"
       - "شركة مساحة topographic جدة"
       - "GNSS RTK survey company Jeddah"
       - "setting out engineer Jeddah contractor"
+      - "construction surveyor hiring Jeddah"
+      - "municipal GIS survey company Jeddah"
+      - "Ministry of Housing survey contractor Jeddah"
+      - "مساح أراضي أول جدة"
+      - "فني GIS جدة"
+      - "مفتش مساحة جدة"
+      - "مساح تقسيم جدة"
     Abha:
+      - "Senior Land Surveyor Abha Asir"
+      - "construction surveyor Abha"
+      - "GIS technician Abha"
+      - "cadastral surveyor Asir"
+      - "survey inspector Abha"
       - "مكتب مساحة أبها"
-      - "survey engineer Asir region"
+      - "setting out engineer Abha"
+      - "Ministry of Housing contractor Abha survey"
+      - "مساح إنشائي أبها"
+
+  linkedin_queries:
+    - 'site:linkedin.com/jobs "senior land surveyor" Saudi Arabia'
+    - 'site:linkedin.com/jobs "senior land surveyor" Jeddah'
+    - 'site:linkedin.com/jobs "Dar Al Riyadh" surveyor'
+    - 'site:linkedin.com/jobs Parsons surveyor Saudi'
+    - 'site:linkedin.com/jobs WSP "land surveyor" Saudi'
+    - 'site:linkedin.com/jobs "GIS technician" survey Saudi'
+    - 'site:linkedin.com/jobs "survey inspector" Saudi Arabia'
+    - 'site:linkedin.com/jobs "cadastral surveyor" Jeddah'
+    - 'site:linkedin.com/jobs "construction surveyor" Jeddah'
+    - 'site:linkedin.com/jobs "مساح أول" السعودية'
+
+  careers_queries:
+    - 'site:glassdoor.com senior land surveyor Saudi Arabia'
+    - 'site:glassdoor.com "Dar Al Riyadh" surveyor'
+    - 'site:bayt.com senior land surveyor Jeddah'
+    - 'site:bayt.com GIS technician survey Saudi'
+    - 'site:sa.indeed.com survey inspector Jeddah'
+    - 'site:careers-ksa.com cadastral surveyor'
+    - 'site:tanqeeb.com مساح أراضي أول'
+    - 'site:naukrigulf.com Parsons surveyor Saudi'
+    - 'site:gulftalent.com WSP land surveyor'
+    - 'site:glassdoor.com KEO surveyor Saudi'
 
 testing:
   hr_preview_email: "nader.bmm@gmail.com"
+
+# ── استراتيجية التقديم الذكية (BetterJob Pro) ─────────────────────
+application_strategy:
+  enabled: true
+  mode: quality_first
+  rationale_ar: "15 تقديم مخصص/أسبوع يُنتج ردوداً أكثر بـ3× من 50 إيميل عشوائي"
+
+  daily_targets:
+    total: 3
+    priority_employers: 1
+    senior_roles: 1
+    overlooked_roles: 1
+    standard: 1
+
+  weekly_targets:
+    total: 15
+    new_applications: 15
+    priority_employers: 5
+    follow_ups: 8
+    working_days: 5
+
+  customization_time:
+    deep:
+      label_ar: "تخصيص عميق"
+      minutes: 15
+      job_ranks: [1, 2, 3]
+      require_project_mention: true
+      instruction_ar: "ابحث عن مشروع محدد للشركة واذكره — Senior / Engineer / Construction"
+    medium:
+      label_ar: "تخصيص متوسط"
+      minutes: 8
+      job_ranks: [4, 5, 6]
+      instruction_ar: "عدّل المسمى والـ Hook والفقرة الأولى — Cadastral / GIS / Inspector"
+    light:
+      label_ar: "تخصيص سريع"
+      minutes: 5
+      job_ranks: [7, 8, 9, 10]
+      instruction_ar: "عدّل سطراً واحداً (مدينة أو مسمى فرعي)"
+
+  weekly_plan:
+    sunday:
+      label_ar: "الأحد — 3 تقديمات مخصصة"
+      new_applications: 3
+      follow_ups: 1
+      focus: priority_employers
+    monday:
+      label_ar: "الاثنين — 3 تقديمات (Senior)"
+      new_applications: 3
+      follow_ups: 2
+      focus: senior_roles
+    tuesday:
+      label_ar: "الثلاثاء — 3 تقديمات (إنشائي/رفع)"
+      new_applications: 3
+      follow_ups: 1
+      focus: standard
+    wednesday:
+      label_ar: "الأربعاء — 3 تقديمات (وظائف مغفولة)"
+      new_applications: 3
+      follow_ups: 2
+      focus: overlooked_roles
+    thursday:
+      label_ar: "الخميس — 3 تقديمات + متابعات"
+      new_applications: 3
+      follow_ups: 2
+      focus: mixed
+    friday:
+      label_ar: "الجمعة — استراحة"
+      new_applications: 0
+      follow_ups: 0
+      focus: rest
+    saturday:
+      label_ar: "السبت — بحث وتعديل الرسائل"
+      new_applications: 0
+      follow_ups: 0
+      focus: research
+
+  follow_up:
+    max_stages: 3
+    stages:
+      - stage: 1
+        days_after: 3
+        channel: email
+        label_ar: "متابعة بريد — يوم 3"
+      - stage: 2
+        days_after: 7
+        channel: whatsapp
+        label_ar: "واتساب — يوم 7"
+      - stage: 3
+        days_after: 14
+        channel: email
+        label_ar: "متابعة نهائية — يوم 14"
+
+  achievement_hooks:
+    senior:
+      ar: "12 سنة خبرة | 1,400+ مخطط بلدي (فرسان) | 48+20 فيلا MOH | SCE من 2018"
+      en: "12 yrs | 1,400+ municipal plots (Farasan) | 48+20 MOH villas | SCE since 2018"
+    priority:
+      ar: "إقامة قابلة للتحويل | 12 سنة | Total Station Leica/Trimble/Topcon"
+      en: "Transferable iqama | 12 years | Leica/Trimble/Topcon"
+    overlooked_gis:
+      ar: "خبرة GIS بلدي + رفع Etmad/Balady — جاهز فوراً"
+      en: "Municipal GIS + Etmad/Balady submission experience"
+    overlooked_cadastral:
+      ar: "7+ سنوات تقسيم أراضي وحدود وصكوك"
+      en: "7+ years land subdivision, boundaries & deed surveys"
+    overlooked_inspector:
+      ar: "QA/QC + As-Built + Red Line — خبرة استشارات ومقاولات"
+      en: "QA/QC, As-Built & Red Line — consultant & contractor sites"
+    standard:
+      ar: "مساحة إنشائية Setting Out + GNSS/RTK + AutoCAD"
+      en: "Construction survey, Setting Out, GNSS/RTK, AutoCAD"
+
+  tier_rules:
+    priority_employers:
+      match: priority_employer_list
+      job_title_rank: 1
+      hook: priority
+    senior:
+      min_fit_score: 65
+      job_title_rank: 1
+      hook: senior
+    overlooked_gis:
+      keywords: [gis, balady, etmad, municipality, بلدي, gis]
+      job_title_rank: 5
+      hook: overlooked_gis
+    overlooked_cadastral:
+      keywords: [cadastral, subdivision, consultant, استشارات, تقسيم, صك]
+      job_title_rank: 4
+      hook: overlooked_cadastral
+    overlooked_inspector:
+      keywords: [inspector, qa, qc, as-built, مفتش, مراقب]
+      job_title_rank: 6
+      hook: overlooked_inspector
+    standard:
+      job_title_rank: 2
+      hook: standard

@@ -199,6 +199,57 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
         """
     )
 
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS strategy_applications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL,
+            outreach_log_id INTEGER,
+            job_title_en TEXT NOT NULL,
+            job_title_ar TEXT,
+            tier TEXT NOT NULL,
+            hook_key TEXT,
+            subject TEXT,
+            applied_at TEXT NOT NULL,
+            follow_up_stage INTEGER DEFAULT 0,
+            next_follow_up_at TEXT,
+            last_follow_up_at TEXT,
+            status TEXT DEFAULT 'sent',
+            notes TEXT,
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+            FOREIGN KEY (outreach_log_id) REFERENCES outreach_log(id) ON DELETE SET NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_strategy_apps_company ON strategy_applications(company_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_strategy_apps_follow_up ON strategy_applications(next_follow_up_at)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS strategy_follow_ups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            application_id INTEGER NOT NULL,
+            company_id INTEGER NOT NULL,
+            stage INTEGER NOT NULL,
+            channel TEXT NOT NULL,
+            due_at TEXT NOT NULL,
+            completed_at TEXT,
+            status TEXT DEFAULT 'pending',
+            subject TEXT,
+            body_ar TEXT,
+            body_en TEXT,
+            FOREIGN KEY (application_id) REFERENCES strategy_applications(id) ON DELETE CASCADE,
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_strategy_fu_due ON strategy_follow_ups(due_at, status)"
+    )
+
 
 def _sync_delivery_from_history(conn: sqlite3.Connection) -> None:
     conn.execute(

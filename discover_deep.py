@@ -69,6 +69,47 @@ def load_config(path: str = "config.yaml") -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
+def _merge_queries(*lists: list[str]) -> list[str]:
+    seen: set[str] = set()
+    merged: list[str] = []
+    for lst in lists:
+        for query in lst:
+            q = query.strip()
+            if q and q not in seen:
+                seen.add(q)
+                merged.append(q)
+    return merged
+
+
+def _queries_from_job_titles(
+    config: dict[str, Any],
+    platform: str,
+    city: str,
+) -> list[str]:
+    """Build search queries from ranked target_job_titles in config."""
+    titles = config.get("job_discovery", {}).get("target_job_titles", [])
+    queries: list[str] = []
+    for item in titles:
+        for kw in item.get("keywords_en", []):
+            kw = str(kw).strip()
+            if not kw:
+                continue
+            if platform == "linkedin":
+                queries.append(f'site:linkedin.com/jobs "{kw}" {city}')
+            elif platform == "careers":
+                queries.append(f"site:bayt.com {kw} {city}")
+                queries.append(f"site:careers-ksa.com {kw}")
+        for kw in item.get("keywords_ar", []):
+            kw = str(kw).strip()
+            if not kw:
+                continue
+            if platform == "linkedin":
+                queries.append(f'site:linkedin.com/jobs "{kw}" {city}')
+            elif platform == "careers":
+                queries.append(f"site:tanqeeb.com {kw} السعودية")
+    return queries
+
+
 def _city_queries(config: dict[str, Any]) -> dict[str, list[str]]:
     """Merge config job_discovery queries with defaults."""
     base = dict(CITY_QUERIES)
@@ -79,6 +120,50 @@ def _city_queries(config: dict[str, Any]) -> dict[str, list[str]]:
             base.setdefault(city, [])
             base[city].extend(extra)
     return base
+
+
+def _employer_queries(config: dict[str, Any], city: str = "Jeddah") -> list[str]:
+    queries: list[str] = []
+    for emp in config.get("job_discovery", {}).get("priority_employers", []):
+        for query in emp.get("search_queries", []):
+            q = str(query).replace("{city}", city)
+            queries.append(q)
+    return queries
+
+
+def _linkedin_queries(config: dict[str, Any], city: str) -> list[str]:
+    jd = config.get("job_discovery", {})
+    city_queries = [q.replace("Jeddah", city) for q in LINKEDIN_JOB_QUERIES]
+    if city != "Jeddah":
+        city_queries = [q.replace("jeddah", city.lower()) for q in city_queries]
+    return _merge_queries(
+        city_queries,
+        [q.replace("Jeddah", city) for q in jd.get("linkedin_queries", [])],
+        _queries_from_job_titles(config, "linkedin", city),
+        _employer_queries(config, city),
+    )
+
+
+def _careers_queries(config: dict[str, Any], city: str) -> list[str]:
+    jd = config.get("job_discovery", {})
+    portal_queries = list(CAREERS_PORTAL_QUERIES)
+    if city == "Abha":
+        portal_queries = [
+            q.replace("jeddah", "abha").replace("Jeddah", "Abha")
+            for q in portal_queries
+        ]
+    config_queries = jd.get("careers_queries", [])
+    if city == "Abha":
+        config_queries = [
+            q.replace("jeddah", "abha").replace("Jeddah", "Abha")
+            for q in config_queries
+        ]
+    return _merge_queries(
+        portal_queries,
+        config_queries,
+        _queries_from_job_titles(config, "careers", city),
+        _employer_queries(config, city),
+    )
 
 
 def _extract_emails_from_page(url: str, timeout: int = 12) -> list[str]:
@@ -200,9 +285,7 @@ def discover_linkedin(
     stats: dict[str, Any] = {"new": 0, "updated": 0, "skipped": 0, "errors": []}
     seen: set[str] = set()
 
-    queries = list(LINKEDIN_JOB_QUERIES)
-    if city == "Abha":
-        queries = [q.replace("Jeddah", "Abha") for q in queries]
+    queries = _linkedin_queries(config, city)
 
     for query in queries:
         try:
@@ -245,9 +328,7 @@ def discover_careers_portals(
     stats: dict[str, Any] = {"new": 0, "updated": 0, "skipped": 0, "errors": []}
     seen: set[str] = set()
 
-    for query in CAREERS_PORTAL_QUERIES:
-        if city == "Abha" and "jeddah" in query.lower() and "abha" not in query.lower():
-            query = query.replace("jeddah", "abha").replace("Jeddah", "Abha")
+    for query in _careers_queries(config, city):
         try:
             for item in _search_duckduckgo(query, max_q):
                 url = item.get("website", "")
@@ -293,6 +374,7 @@ def discover_hr_web(
     queries = list(HR_EMAIL_QUERIES)
     for q in _city_queries(config).get(city, []):
         queries.append(f'{q} "hr@" OR "careers@" contact')
+    queries.extend(_employer_queries(config, city))
 
     for query in queries:
         try:
