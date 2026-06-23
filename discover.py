@@ -115,11 +115,17 @@ def discover_region(
                 err_body = str(exc)
             err_msg = f"'{query}': {err_body}"
             stats["errors"].append(err_msg)
-            print(f"خطأ في البحث {err_msg}")
+            try:
+                print(f"خطأ في البحث {err_msg}")
+            except (OSError, UnicodeEncodeError):
+                pass
             continue
         except httpx.HTTPError as exc:
             stats["errors"].append(f"'{query}': {exc}")
-            print(f"خطأ في البحث '{query}': {exc}")
+            try:
+                print(f"خطأ في البحث '{query}': {exc}")
+            except (OSError, UnicodeEncodeError):
+                pass
             continue
 
         for place in places:

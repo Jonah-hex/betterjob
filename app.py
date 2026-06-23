@@ -397,7 +397,7 @@ with tab_auto:
                     st.error(e)
 
     st.info(
-        "⏱️ الإرسال الحقيقي: ~30 ثانية/إيميل. شريط التقدم يتحدّث مع كل رسالة. "
+        "⏱️ الإرسال الحقيقي: ~30 ثانية/إيميل. شريط التقدم + **عدّاد وقت متبقٍ** يتحدّث مع كل رسالة. "
         "يُرسل فقط لإيميلات موثّقة (من الموقع/CSV) — لا تخمين من الدليل."
     )
 
@@ -410,13 +410,12 @@ with tab_auto:
             elif dry_run:
                 st.warning("أوقف Dry-Run من الشريط الجانبي للإرسال الفعلي")
             else:
-                prog = st.progress(0, text="بدء التشغيل...")
-                def on_progress(step, total, msg):
-                    prog.progress(step / total, text=msg)
+                on_progress, prog, eta_ph = ui_theme.make_streamlit_progress("بدء التشغيل...")
                 try:
                     result = run_full_pipeline(config, on_progress=on_progress)
                     st.session_state["last_full_run"] = result
                     prog.progress(1.0, text="اكتمل!")
+                    eta_ph.empty()
                     if result.get("success"):
                         _render_pipeline_result(result)
                     else:
@@ -424,6 +423,7 @@ with tab_auto:
                             st.error(e)
                     st.rerun()
                 except Exception as exc:
+                    eta_ph.empty()
                     st.error(str(exc))
 
     with btn_deep_send:
@@ -438,13 +438,12 @@ with tab_auto:
             elif dry_run:
                 st.warning("أوقف Dry-Run من الشريط الجانبي للإرسال الفعلي")
             else:
-                prog = st.progress(0, text="اكتشاف عميق...")
-                def on_deep_progress(step, total, msg):
-                    prog.progress(step / total, text=msg)
+                on_progress, prog, eta_ph = ui_theme.make_streamlit_progress("اكتشاف عميق...")
                 try:
-                    result = run_deep_discover_and_send(config, on_progress=on_deep_progress)
+                    result = run_deep_discover_and_send(config, on_progress=on_progress)
                     st.session_state["last_deep_run"] = result
                     prog.progress(1.0, text="اكتمل!")
+                    eta_ph.empty()
                     if result.get("success"):
                         send = result.get("send", {})
                         disc = result.get("discovery", {})
@@ -458,6 +457,7 @@ with tab_auto:
                             st.error(e)
                     st.rerun()
                 except Exception as exc:
+                    eta_ph.empty()
                     st.error(str(exc))
 
     st.markdown("---")
@@ -642,8 +642,13 @@ with tab_companies:
             elif not pending_new:
                 st.warning("لا توجد شركات جديدة جاهزة — نفّذ اكتشافاً أولاً")
             else:
-                with st.spinner(f"جاري إرسال CV لـ {min(len(pending_new), remaining_today)} شركة..."):
-                    result = run_apply_new(config)
+                on_progress, prog, eta_ph = ui_theme.make_streamlit_progress(
+                    f"جاري إرسال CV لـ {min(len(pending_new), remaining_today)} شركة..."
+                )
+                try:
+                    result = run_apply_new(config, on_progress=on_progress)
+                    prog.progress(1.0, text="اكتمل!")
+                    eta_ph.empty()
                     st.success(
                         f"✅ أُرسل: {result['sent']} | ❌ فشل: {result['failed']} | "
                         f"متبقي اليوم: {result['remaining_today']}"
@@ -654,6 +659,9 @@ with tab_companies:
                                 icon = "✅" if d.get("success") else "❌"
                                 st.write(f"{icon} {d.get('company')} — {d.get('email', d.get('error', ''))}")
                     st.rerun()
+                except Exception as exc:
+                    eta_ph.empty()
+                    st.error(str(exc))
 
         if d3.button("⚡ اكتشاف + تقديم", use_container_width=True, key="co_disc_discover_apply"):
             if prereq_apply:
@@ -836,9 +844,16 @@ with tab_delivery:
                 "آخر تحديث": ui_theme.format_local_datetime(r.get("updated_at")),
             } for r in items]), use_container_width=True, hide_index=True)
             if st.button("📤 إرسال المعلّق الآن", type="primary", key="send_pending_batch"):
-                result = run_apply_new(config)
-                st.success(f"أُرسل: {result['sent']} | فشل: {result['failed']}")
-                st.rerun()
+                on_progress, prog, eta_ph = ui_theme.make_streamlit_progress("جاري إرسال المعلّق...")
+                try:
+                    result = run_apply_new(config, on_progress=on_progress)
+                    prog.progress(1.0, text="اكتمل!")
+                    eta_ph.empty()
+                    st.success(f"أُرسل: {result['sent']} | فشل: {result['failed']}")
+                    st.rerun()
+                except Exception as exc:
+                    eta_ph.empty()
+                    st.error(str(exc))
         else:
             st.info("لا توجد رسائل معلقة — شغّل اكتشافاً جديداً أو انتظر الحد اليومي")
 
@@ -847,9 +862,16 @@ with tab_delivery:
         if items:
             show_companies_table(pd.DataFrame(_company_rows(items)))
             if st.button("📤 تقديم CV للجميع", type="primary", key="send_not_sent_batch"):
-                result = run_apply_new(config)
-                st.success(f"أُرسل: {result['sent']} | فشل: {result['failed']}")
-                st.rerun()
+                on_progress, prog, eta_ph = ui_theme.make_streamlit_progress("جاري الإرسال...")
+                try:
+                    result = run_apply_new(config, on_progress=on_progress)
+                    prog.progress(1.0, text="اكتمل!")
+                    eta_ph.empty()
+                    st.success(f"أُرسل: {result['sent']} | فشل: {result['failed']}")
+                    st.rerun()
+                except Exception as exc:
+                    eta_ph.empty()
+                    st.error(str(exc))
         else:
             st.success("جميع الشركات ذات الإيميل تم التعامل معها")
 

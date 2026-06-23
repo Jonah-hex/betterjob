@@ -53,13 +53,30 @@ def _safe_text(text: object) -> str:
 
 
 def log(msg: str) -> None:
+    """Console log safe on Windows + Streamlit (avoids OSError errno 22)."""
     ts = datetime.now().strftime("%H:%M:%S")
     line = f"[{ts}] {_safe_text(msg)}"
-    try:
-        print(line)
-    except (OSError, UnicodeEncodeError):
-        sys.stdout.buffer.write((line + "\n").encode("utf-8", errors="replace"))
-        sys.stdout.buffer.flush()
+    payload = (line + "\n").encode("utf-8", errors="replace")
+    for sink in (sys.stdout, sys.stderr):
+        try:
+            sink.write(line + "\n")
+            sink.flush()
+            return
+        except (OSError, UnicodeEncodeError, AttributeError, ValueError):
+            pass
+        buf = None
+        try:
+            buf = sink.buffer  # type: ignore[attr-defined]
+        except (OSError, UnicodeEncodeError, AttributeError, ValueError):
+            buf = None
+        if buf is None:
+            continue
+        try:
+            buf.write(payload)
+            buf.flush()
+            return
+        except (OSError, UnicodeEncodeError, AttributeError, ValueError):
+            continue
 
 
 def check_prerequisites(config: dict) -> list[str]:
@@ -181,17 +198,17 @@ def run_prepare_sendable(config: dict) -> dict:
     }
 
 
-def run_apply_new(config: dict) -> dict:
+def run_apply_new(config: dict, on_progress=None) -> dict:
     """تقديم CV لجميع الشركات الجديدة الجاهزة (ضمن الحد اليومي)."""
     prep = run_prepare_sendable(config)
-    send_result = run_sending(config)
+    send_result = run_sending(config, on_progress=on_progress)
     return {**send_result, **prep}
 
 
-def run_discover_and_apply(config: dict) -> dict:
+def run_discover_and_apply(config: dict, on_progress=None) -> dict:
     """اكتشاف شركات جديدة ثم تقديم CV عليها مباشرة."""
     discovery = run_discovery(config)
-    apply_result = run_apply_new(config)
+    apply_result = run_apply_new(config, on_progress=on_progress)
     apply_result["discovery"] = discovery
     return apply_result
 
@@ -223,10 +240,10 @@ def run_deep_discover_and_send(
 
     _notify_progress(on_progress, 4, total, "④ إرسال CV (أعلى جودة أولاً)")
 
-    def send_progress(i, total, msg):
+    def send_progress(i, total, msg, eta_seconds=None):
         if on_progress:
-            frac = 3 / total + i / total  # steps 1-3 done, step 4 in progress
-            on_progress(4, 4, msg)
+            step_frac = 3 + (i / total if total else 0)
+            on_progress(step_frac, 4, msg, eta_seconds)
 
     send_result = run_sending(config, on_progress=send_progress)
 
@@ -359,9 +376,10 @@ def run_full_pipeline(
     # ⑥ إرسال
     _notify_progress(on_progress, 6, total_steps, "⑥ إرسال CV — بدء...")
 
-    def send_progress(i, total, msg):
+    def send_progress(i, total, msg, eta_seconds=None):
         if on_progress:
-            on_progress(6, 6, msg)
+            step_frac = 5 + (i / total if total else 0)
+            on_progress(step_frac, 6, msg, eta_seconds)
 
     send_result = run_sending(config, on_progress=send_progress)
     summary["send"] = send_result

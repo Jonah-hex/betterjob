@@ -649,14 +649,21 @@ def auto_send_all(
     sent = 0
     failed = 0
     total = len(sendable)
+    sending_cfg = config.get("sending", {})
 
     for i, company in enumerate(sendable, 1):
-        if db.count_sent_today() >= max_per_day and not config.get("sending", {}).get("dry_run"):
+        if db.count_sent_today() >= max_per_day and not sending_cfg.get("dry_run"):
             break
         if on_progress:
+            delay = int(sending_cfg.get("delay_seconds_between", 30))
+            dry = sending_cfg.get("dry_run", False)
+            per_email = 8 + (2 if dry else delay)
+            eta_seconds = max(0, (total - i + 1) * per_email)
             on_progress(
-                i, total,
+                i,
+                total,
                 f"إرسال {i}/{total}: {company.get('company_name', '')[:40]} → {company.get('email', '')}",
+                eta_seconds,
             )
         result = send_to_company(company["id"], config, skip_approval=True)
         results.append({

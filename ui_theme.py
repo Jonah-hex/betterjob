@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any, Callable, Optional
 
 import streamlit as st
 
@@ -79,6 +80,58 @@ def format_local_timestamp(ts: float) -> str:
     return format_local_datetime(
         datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     )
+
+
+def format_eta(seconds: int) -> str:
+    """Human-readable Arabic ETA (seconds → د/ث)."""
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return f"{seconds} ث"
+    mins, secs = divmod(seconds, 60)
+    if mins < 60:
+        return f"{mins} د {secs} ث" if secs else f"{mins} د"
+    hours, mins = divmod(mins, 60)
+    if mins:
+        return f"{hours} س {mins} د"
+    return f"{hours} س"
+
+
+def estimate_send_eta_seconds(current_index: int, total: int, config: dict[str, Any]) -> int:
+    """Rough ETA for remaining emails (SMTP + delay between sends)."""
+    if total <= 0 or current_index <= 0:
+        return 0
+    sending = config.get("sending", {})
+    dry = sending.get("dry_run", False)
+    delay = int(sending.get("delay_seconds_between", 30))
+    per_email = 8 + (2 if dry else delay)
+    remaining = max(0, total - current_index + 1)
+    return remaining * per_email
+
+
+def make_streamlit_progress(
+    label: str = "بدء التشغيل...",
+) -> tuple[Callable[..., None], Any, Any]:
+    """Progress bar + ETA line for pipeline/send callbacks."""
+    prog = st.progress(0, text=label)
+    eta_ph = st.empty()
+
+    def callback(
+        step: int,
+        total: int,
+        msg: str,
+        eta_seconds: Optional[int] = None,
+    ) -> None:
+        frac = (step / total) if total else 0.0
+        line = msg
+        if eta_seconds is not None and eta_seconds > 0:
+            eta_label = format_eta(eta_seconds)
+            line = f"{msg} | ⏱ ~{eta_label}"
+            eta_ph.info(f"⏱ **الوقت المتبقي التقريبي:** {eta_label}")
+        else:
+            eta_ph.empty()
+        prog.progress(min(max(frac, 0.0), 1.0), text=line)
+
+    return callback, prog, eta_ph
 
 
 def format_local_datetime(value: str | None, empty: str = "—") -> str:
