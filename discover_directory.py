@@ -62,6 +62,35 @@ def _clean_name(text: str) -> str:
     return text[:120]
 
 
+_JUNK_NAME_RE = re.compile(
+    r"|".join(
+        [
+            r"top\s*\+?\s*\d+",
+            r"best\s+.+\s+companies\s+in",
+            r"^\d+\s+best\s+",
+            r"companies\s+in\s+\w+",
+            r"construction\s+of\s+buildings\s+companies",
+            r"business\s+director",
+            r"hiring\s+",
+            r"jobs?\s+in\s+",
+            r"job\s+at\s+",
+            r"\|\s*jobs",
+            r"land\s+surveyor\s+jobs?",
+            r"surveyor\s+jobs?\s+in",
+            r"^about\s+us\s+-",
+        ]
+    ),
+    re.I,
+)
+
+
+def _is_listing_junk(name: str) -> bool:
+    text = name.strip()
+    if len(text) > 90:
+        return True
+    return bool(_JUNK_NAME_RE.search(text))
+
+
 def _host_ok(url: str) -> bool:
     host = urlparse(url).netloc.lower().replace("www.", "")
     return bool(host) and not any(skip in host for skip in SKIP_HOSTS)
@@ -86,6 +115,8 @@ def _infer_sector(name: str, url: str) -> str:
 
 
 def _matches_filters(name: str, config: dict[str, Any]) -> bool:
+    if _is_listing_junk(name):
+        return False
     keywords = [k.lower() for k in config.get("filters", {}).get("include_keywords", [])]
     text = name.lower()
     return any(kw in text for kw in keywords) if keywords else len(name) >= 4

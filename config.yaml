@@ -200,7 +200,7 @@ email_extraction:
   allow_guessed_emails: false
 
 outreach_quality:
-  min_fit_score: 40
+  min_fit_score: 50
   prioritize_by_fit: true
   skip_weak_domain_emails: true
   whatsapp_followup_top: 30
@@ -209,7 +209,7 @@ outreach_quality:
 
 sending:
   max_per_day: 100
-  delay_seconds_between: 30
+  delay_seconds_between: 45
   require_manual_approve: false
   attach_uploaded_cv: false
   dry_run: false
