@@ -208,6 +208,13 @@ chmod +x deploy/oracle/install.sh
 
 المستودع: `https://github.com/Jonah-hex/betterjob`
 
+📖 **دليل كامل (دوام · بيت · Oracle):** [SYNC_DEVICES.md](SYNC_DEVICES.md)
+
+| الجهاز | الأمر |
+|--------|--------|
+| **دوام / بيت (Windows)** | `.\sync_pull.ps1` |
+| **سيرفر Oracle** | `cd ~/betterjob && ./deploy/oracle/update.sh` |
+
 ### رفع من هذا الجهاز
 
 ```powershell
@@ -219,13 +226,19 @@ cd Desktop\betterjob
 
 ### استنساخ على جهازك الآخر
 
-```bash
+```powershell
 git clone https://github.com/Jonah-hex/betterjob.git
 cd betterjob
 python -m venv .venv
-.venv\Scripts\activate
+.\.venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
+```
+
+أو بعد الاستنساخ — جلب تحديثات لاحقة:
+
+```powershell
+.\sync_pull.ps1
 ```
 
 ثم املأ `.env` (Brevo SMTP) وشغّل `streamlit run app.py`.
