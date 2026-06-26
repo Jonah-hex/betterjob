@@ -237,6 +237,10 @@ def discover_city_directory(
             stats["skipped"] += 1
             continue
 
+        if outreach_quality.is_listing_company(name, website, config=config):
+            stats["skipped"] += 1
+            continue
+
         place_id = _place_id("directory", name, website or city)
         sector = _infer_sector(name, website or "")
 

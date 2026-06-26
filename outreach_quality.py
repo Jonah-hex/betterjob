@@ -58,6 +58,51 @@ SKIP_EMAIL_DOMAIN_FRAGMENTS = (
 
 SKIP_WEBSITE_HOST_FRAGMENTS = SKIP_EMAIL_DOMAIN_FRAGMENTS
 
+INFERRED_DISCOVERY_SOURCES = frozenset({
+    "directory",
+    "linkedin",
+    "careers_portal",
+    "deep_search",
+})
+
+LISTING_NAME_FRAGMENTS = (
+    "top 10",
+    "top 21",
+    "top 27",
+    "top 40",
+    "top construction",
+    "best 40",
+    "best construction",
+    "list of",
+    "meet the builder",
+    "emails & contacts",
+    "email & contacts",
+    "business directory",
+    "company profile",
+    "contact details",
+    "construction companies in",
+    "engineering companies in",
+    "construction jeddah -",
+    " - expatriates",
+    "أفضل 40",
+    "أفضل 10",
+    "قائمة ",
+    "فرص عمل",
+    "مطلوب مقاولات",
+    "دليل الأعمال",
+    "gulfnear",
+    "ksaexpats",
+    "saudiayp",
+    "eyeofriyadh",
+    "mourjan.com",
+    "bizmideast",
+    "gulfleads",
+    "gludo.org",
+    "expatriates.com",
+    "price-ksa",
+    "dalilmadina",
+)
+
 DEFAULT_EXCLUDE_COMPANY_FRAGMENTS = (
     "homerun",
     "gethomerun",
@@ -169,6 +214,149 @@ def is_blocked_outreach_email(email: str, config: Optional[dict[str, Any]] = Non
         if frag.lower() in domain:
             return True
     return False
+
+
+def is_listing_company(
+    name: str,
+    website: Optional[str] = None,
+    job_url: Optional[str] = None,
+    config: Optional[dict[str, Any]] = None,
+) -> bool:
+    """Web directory / SEO list pages — not a hiring employer."""
+    if is_excluded_company(name, website, job_url, config):
+        return True
+    text = " ".join(
+        part for part in (name or "", website or "", job_url or "") if part
+    ).lower()
+    return any(frag in text for frag in LISTING_NAME_FRAGMENTS)
+
+
+def _company_sent_successfully(conn, company_id: int) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1 FROM outreach_log
+        WHERE company_id = ? AND dry_run = 0 AND error_message IS NULL
+        LIMIT 1
+        """,
+        (company_id,),
+    ).fetchone()
+    return row is not None
+
+
+def _company_email_sources(conn, company_id: int) -> list[str]:
+    rows = conn.execute(
+        "SELECT source FROM emails WHERE company_id = ?",
+        (company_id,),
+    ).fetchall()
+    return [r["source"] for r in rows]
+
+
+def purge_directory_listings(config: Optional[dict[str, Any]] = None) -> dict[str, int]:
+    """
+    حذف شركات القوائم/الدليل وإيميلاتها المُستنتجة.
+    يحتفظ بالشركات التي وصلها CV فعلياً (سجل إرسال ناجح).
+    """
+    config = config or load_config()
+    stats = {
+        "emails_removed": 0,
+        "companies_deleted": 0,
+        "companies_demoted": 0,
+        "kept_sent": 0,
+    }
+
+    with db.get_connection() as conn:
+        companies = conn.execute(
+            """
+            SELECT id, company_name, website, linkedin_url, careers_url, job_url,
+                   discovery_source, status
+            FROM companies
+            """
+        ).fetchall()
+
+        for row in companies:
+            cid = row["id"]
+            if _company_sent_successfully(conn, cid):
+                stats["kept_sent"] += 1
+                continue
+
+            sources = _company_email_sources(conn, cid)
+            listing = is_listing_company(
+                row["company_name"],
+                row["website"],
+                row["job_url"] or row["careers_url"] or row["linkedin_url"],
+                config,
+            )
+            from_directory = row["discovery_source"] in INFERRED_DISCOVERY_SOURCES
+            only_inferred = bool(sources) and all(s in INFERRED_SOURCES for s in sources)
+            no_verified_email = not any(s in VERIFIED_SOURCES for s in sources)
+
+            should_delete = (
+                from_directory
+                or listing
+                or (only_inferred and no_verified_email)
+            )
+
+            if should_delete:
+                conn.execute("DELETE FROM companies WHERE id = ?", (cid,))
+                stats["companies_deleted"] += 1
+                continue
+
+            # إزالة إيميلات مُستنتجة من شركات حقيقية لم تُرسل بعد
+            inferred_rows = conn.execute(
+                """
+                SELECT id FROM emails
+                WHERE company_id = ? AND source IN ({})
+                """.format(",".join("?" * len(INFERRED_SOURCES))),
+                (cid, *INFERRED_SOURCES),
+            ).fetchall()
+            for email_row in inferred_rows:
+                conn.execute("DELETE FROM emails WHERE id = ?", (email_row["id"],))
+                stats["emails_removed"] += 1
+
+            has_primary = conn.execute(
+                """
+                SELECT 1 FROM emails
+                WHERE company_id = ? AND is_primary = 1
+                LIMIT 1
+                """,
+                (cid,),
+            ).fetchone()
+            has_any = conn.execute(
+                "SELECT 1 FROM emails WHERE company_id = ? LIMIT 1",
+                (cid,),
+            ).fetchone()
+
+            if not has_any:
+                conn.execute(
+                    "UPDATE companies SET status = 'no_email' WHERE id = ?",
+                    (cid,),
+                )
+                stats["companies_demoted"] += 1
+            elif not has_primary and has_any:
+                first = conn.execute(
+                    "SELECT id FROM emails WHERE company_id = ? ORDER BY id LIMIT 1",
+                    (cid,),
+                ).fetchone()
+                if first:
+                    conn.execute(
+                        "UPDATE emails SET is_primary = 1 WHERE id = ?",
+                        (first["id"],),
+                    )
+                conn.execute(
+                    "UPDATE companies SET status = 'no_email' WHERE id = ?",
+                    (cid,),
+                )
+                stats["companies_demoted"] += 1
+
+    return stats
+
+
+def purge_all_non_employers(config: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """تنظيف كامل: بوابات + قوائم/دليل."""
+    config = config or load_config()
+    portals = purge_non_employer_targets(config)
+    listings = purge_directory_listings(config)
+    return {"portals": portals, "listings": listings}
 
 
 def classify_email(
