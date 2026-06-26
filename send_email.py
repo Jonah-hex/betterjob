@@ -689,6 +689,8 @@ def auto_send_all(
         "sent": sent,
         "failed": failed,
         "skipped_quality": len(skipped_quality),
+        "queue_size": len(raw_sendable),
+        "eligible": total,
         "remaining_today": max(0, max_per_day - db.count_sent_today()),
         "details": results,
     }

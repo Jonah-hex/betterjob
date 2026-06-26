@@ -30,13 +30,16 @@ load_dotenv()
 BASE_DIR = Path(__file__).parent
 
 PIPELINE_STEPS = (
-    ("discover", "① اكتشاف شامل"),
+    ("discover", "① اكتشاف شركات"),
     ("extract", "② استخراج إيميلات"),
-    ("domains", "③ استنتاج hr@ / careers@"),
+    ("domains", "③ إيميلات من الموقع"),
     ("fit", "④ تقييم الملاءمة"),
     ("queue", "⑤ تجهيز الطابور"),
     ("send", "⑥ إرسال CV"),
 )
+
+# مراحل قابلة للتشغيل من واجهة واحدة (مركز العمل)
+PIPELINE_STAGE_ORDER = ("discover", "extract", "domains", "fit", "queue", "send")
 
 
 def load_config() -> dict:
@@ -206,66 +209,20 @@ def run_apply_new(config: dict, on_progress=None) -> dict:
 
 
 def run_discover_and_apply(config: dict, on_progress=None) -> dict:
-    """اكتشاف شركات جديدة ثم تقديم CV عليها مباشرة."""
-    discovery = run_discovery(config)
-    apply_result = run_apply_new(config, on_progress=on_progress)
-    apply_result["discovery"] = discovery
-    return apply_result
+    """اكتشاف + تجهيز + إرسال — يمر عبر المسار الموحّد."""
+    return run_pipeline(config, discover=True, prepare=True, send=True, on_progress=on_progress)
 
 
-def run_deep_discover_and_send(
-    config: dict,
-    on_progress=None,
-) -> dict[str, object]:
-    """اكتشاف عميق (LinkedIn · بوابات · HR) + استخراج + إرسال CV."""
-    errors = check_prerequisites(config)
-    if errors:
-        return {"success": False, "errors": errors}
+def run_discover_only(config: dict, on_progress=None) -> dict[str, object]:
+    return run_pipeline(config, discover=True, prepare=False, send=False, on_progress=on_progress)
 
-    import discover_deep
-    import job_fit
-    import outreach_quality
 
-    total = 4
-    _notify_progress(on_progress, 1, total, "① اكتشاف شامل + عميق")
-    summary = discover_multi.discover_all_sources(config)
-    deep = discover_deep.discover_target_cities(config)
-    deep_new = sum(r.get("new", 0) for r in deep.values() if isinstance(r, dict))
+def run_prepare_only(config: dict, on_progress=None) -> dict[str, object]:
+    return run_pipeline(config, discover=False, prepare=True, send=False, on_progress=on_progress)
 
-    _notify_progress(on_progress, 2, total, "② استخراج إيميلات ومواقع")
-    prep = run_prepare_sendable(config)
 
-    _notify_progress(on_progress, 3, total, "③ تقييم الملاءمة")
-    job_fit.sync_all_scores(config)
-
-    _notify_progress(on_progress, 4, total, "④ إرسال CV (أعلى جودة أولاً)")
-
-    def send_progress(i, total, msg, eta_seconds=None):
-        if on_progress:
-            step_frac = 3 + (i / total if total else 0)
-            on_progress(step_frac, 4, msg, eta_seconds)
-
-    send_result = run_sending(config, on_progress=send_progress)
-
-    cities = config.get("automation", {}).get("target_cities")
-    import delivery_tracking as tracking
-    pipeline = tracking.get_pipeline_summary(cities)
-
-    return {
-        "success": True,
-        "discovery": {
-            "sources": summary.get("sources_run", []),
-            "total_new": summary.get("total_new", 0) + deep_new,
-            "deep": deep,
-        },
-        "prep": prep,
-        "send": send_result,
-        "pipeline": {
-            "completed": pipeline["completed"],
-            "not_sent": pipeline["not_sent"],
-            "failed": pipeline["failed"],
-        },
-    }
+def run_send_only(config: dict, on_progress=None) -> dict[str, object]:
+    return run_pipeline(config, discover=False, prepare=False, send=True, on_progress=on_progress)
 
 
 def run_extract_contacts_export(config: dict) -> dict[str, object]:
@@ -309,80 +266,108 @@ def _notify_progress(
     log(message)
 
 
-def run_full_pipeline(
+def _active_stages(
+    *,
+    discover: bool,
+    prepare: bool,
+    send: bool,
+) -> list[str]:
+    stages: list[str] = []
+    if discover:
+        stages.append("discover")
+    if prepare:
+        stages.extend(("extract", "domains", "fit", "queue"))
+    if send:
+        stages.append("send")
+    return stages
+
+
+def run_pipeline(
     config: dict,
+    *,
+    discover: bool = True,
+    prepare: bool = True,
+    send: bool = False,
     on_progress=None,
 ) -> dict[str, object]:
     """
-    تشغيل كامل — 6 مراحل متوافقة مع الاكتشاف العميق والملاءمة والطابور.
-    يُرجع ملخصاً للواجهة بدلاً من الخروج عند الخطأ.
+    مسار موحّد — مصدر واحد للاكتشاف والتجهيز والإرسال.
+    يستخدم مصادر config.yaml فقط (مقاولات · هندسة · مساحة — بدون بوابات).
     """
-    errors = check_prerequisites(config)
-    if errors:
-        return {"success": False, "errors": errors}
+    if send:
+        errors = check_prerequisites(config)
+        if errors:
+            return {"success": False, "errors": errors}
 
     import discover_domains
     import delivery_tracking as tracking
     import job_fit
 
     db.init_db()
-    stats_before = db.get_stats()
     cities = config.get("automation", {}).get("target_cities")
-    total_steps = len(PIPELINE_STEPS)
+    stages = _active_stages(discover=discover, prepare=prepare, send=send)
+    if not stages:
+        return {"success": False, "errors": ["لم تُحدَّد أي مرحلة للتشغيل"]}
+
+    total_steps = len(stages)
+    step_idx = 0
     summary: dict[str, object] = {
         "success": True,
         "errors": [],
-        "stats_before": stats_before,
+        "stats_before": db.get_stats(),
+        "stages_run": stages,
     }
 
-    # ① اكتشاف
-    _notify_progress(on_progress, 1, total_steps, "① اكتشاف شامل (CSV · Google · OSM · دليل · LinkedIn · بوابات)")
-    discovery_summary = discover_multi.discover_all_sources(config)
-    discovery_results = discovery_summary.get("by_source", {})
-    total_new = discovery_summary.get("total_new", 0)
-    summary["discovery"] = {
-        "sources": discovery_summary.get("sources_run", []),
-        "total_new": total_new,
-        "by_source": discovery_results,
-    }
-    log(f"  مصادر: {', '.join(discovery_summary.get('sources_run', []))} | جديد: {total_new}")
+    def advance(message: str) -> None:
+        nonlocal step_idx
+        step_idx += 1
+        _notify_progress(on_progress, step_idx, total_steps, message)
 
-    # ② استخراج
-    _notify_progress(on_progress, 2, total_steps, "② استخراج إيميلات من المواقع")
-    extract_result = run_extraction(config)
-    summary["extract"] = extract_result
+    if discover:
+        enabled = config.get("discovery", {}).get("sources", [])
+        src_label = " · ".join(enabled) if enabled else "multi"
+        advance(f"① اكتشاف شركات ({src_label})")
+        discovery_summary = discover_multi.discover_all_sources(config)
+        summary["discovery"] = {
+            "sources": discovery_summary.get("sources_run", []),
+            "total_new": discovery_summary.get("total_new", 0),
+            "by_source": discovery_summary.get("by_source", {}),
+        }
+        log(
+            f"  مصادر: {', '.join(discovery_summary.get('sources_run', []))} | "
+            f"جديد: {discovery_summary.get('total_new', 0)}"
+        )
 
-    # ③ دومينات
-    _notify_progress(on_progress, 3, total_steps, "③ استنتاج إيميلات hr@ / careers@")
-    domain_stats = discover_domains.enrich_all_pending(config)
-    hr_promoted = outreach_quality.promote_all_hr_emails()
-    summary["domains"] = {**domain_stats, "hr_promoted": hr_promoted}
-    log(f"  دومينات: {domain_stats.get('email_found', 0)} | HR primary: {hr_promoted}")
+    if prepare:
+        advance("② استخراج إيميلات من المواقع")
+        extract_result = run_extraction(config)
+        summary["extract"] = extract_result
 
-    # ④ ملاءمة
-    _notify_progress(on_progress, 4, total_steps, "④ تقييم ملاءمة الوظيفة")
-    fit_count = job_fit.sync_all_scores(config)
-    summary["fit"] = {"scored": fit_count}
+        advance("③ إيميلات careers@ / hr@ من الدومين")
+        domain_stats = discover_domains.enrich_all_pending(config)
+        hr_promoted = outreach_quality.promote_all_hr_emails()
+        summary["domains"] = {**domain_stats, "hr_promoted": hr_promoted}
 
-    # ⑤ طابور
-    _notify_progress(on_progress, 5, total_steps, "⑤ تجهيز طابور الإرسال")
-    queue_stats = tracking.prepare_for_sending(cities)
-    pending = db.get_sendable_companies(cities)
-    summary["queue"] = {
-        **queue_stats,
-        "pending_count": len(pending),
-    }
+        advance("④ تقييم ملاءمة الوظيفة")
+        fit_count = job_fit.sync_all_scores(config)
+        summary["fit"] = {"scored": fit_count}
 
-    # ⑥ إرسال
-    _notify_progress(on_progress, 6, total_steps, "⑥ إرسال CV — بدء...")
+        advance("⑤ تجهيز طابور الإرسال")
+        queue_stats = tracking.prepare_for_sending(cities)
+        pending = db.get_sendable_companies(cities)
+        summary["queue"] = {**queue_stats, "pending_count": len(pending)}
 
-    def send_progress(i, total, msg, eta_seconds=None):
-        if on_progress:
-            step_frac = 5 + (i / total if total else 0)
-            on_progress(step_frac, 6, msg, eta_seconds)
+    if send:
+        advance("⑥ إرسال CV (أعلى ملاءمة أولاً)")
 
-    send_result = run_sending(config, on_progress=send_progress)
-    summary["send"] = send_result
+        def send_progress(i, total, msg, eta_seconds=None):
+            if on_progress:
+                base = step_idx - 1
+                frac = base + (i / total if total else 0)
+                on_progress(frac, total_steps, msg, eta_seconds)
+
+        send_result = run_sending(config, on_progress=send_progress)
+        summary["send"] = send_result
 
     stats_after = db.get_stats()
     pipeline = tracking.get_pipeline_summary(cities)
@@ -394,13 +379,22 @@ def run_full_pipeline(
         "failed": pipeline["failed"],
         "no_email": pipeline["no_email"],
     }
-
-    log("=== ملخص نهائي ===")
-    log(f"  شركات: {stats_after.get('total', 0)} | تم الإرسال: {stats_after.get('sent_confirmed', 0)}")
-    log(f"  جاهز: {pipeline['not_sent']} | فشل غير محلول: {pipeline['failed']}")
-    log(f"  مُرسل اليوم: {stats_after.get('sent_today', 0)}")
-    log("✅ اكتمل التشغيل الكامل")
+    log("✅ اكتمل المسار الموحّد")
     return summary
+
+
+def run_full_pipeline(
+    config: dict,
+    on_progress=None,
+) -> dict[str, object]:
+    """تشغيل كامل: اكتشاف + تجهيز + إرسال."""
+    return run_pipeline(
+        config,
+        discover=True,
+        prepare=True,
+        send=True,
+        on_progress=on_progress,
+    )
 
 
 def run_full_pipeline_cli(config: dict) -> None:

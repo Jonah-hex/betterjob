@@ -79,8 +79,8 @@ st.sidebar.markdown(application_strategy.strategy_summary_text(config))
 st.sidebar.markdown("---")
 st.sidebar.info("**3/يوم × 5 أيام = 15/أسبوع** · جمعة استراحة · سبت بحث")
 st.sidebar.markdown("---")
-st.sidebar.markdown("**📐 BetterJob — الاكتشاف والإعداد**")
-st.sidebar.caption("Pro للتقديم والمتابعة · BetterJob لجلب الشركات وإيميلات HR")
+st.sidebar.markdown("**📐 BetterJob — مركز العمل**")
+st.sidebar.caption("اكتشاف + تجهيز + إرسال من تبويب واحد · Pro للاستراتيجية والمتابعة")
 st.sidebar.link_button(
     "فتح BetterJob (8501)",
     "http://localhost:8501",
