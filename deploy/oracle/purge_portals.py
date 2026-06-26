@@ -1,7 +1,11 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+_script = Path(__file__).resolve()
+_root = _script.parents[2] if len(_script.parents) > 2 else _script.parent
+if not (_root / "outreach_quality.py").exists():
+    _root = _script.parent
+sys.path.insert(0, str(_root))
 
 import yaml
 import outreach_quality as oq
