@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import yaml
 
@@ -40,6 +41,57 @@ SKIP_EMAIL_DOMAIN_FRAGMENTS = (
     "google",
     "indeed",
     "bayt",
+    "gulftalent",
+    "naukrigulf",
+    "ejobsboard",
+    "tanqeeb",
+    "glassdoor",
+    "monster",
+    "ziprecruiter",
+    "careers-ksa",
+    "homerun",
+    "gethomerun",
+    "jobrapido",
+    "neuvoo",
+    "jooble",
+)
+
+SKIP_WEBSITE_HOST_FRAGMENTS = SKIP_EMAIL_DOMAIN_FRAGMENTS
+
+DEFAULT_EXCLUDE_COMPANY_FRAGMENTS = (
+    "homerun",
+    "gethomerun",
+    "job at ",
+    "jobs in ",
+    "jobs at ",
+    "job opening",
+    "land surveyor job",
+    "surveyor job",
+    "surveyors jobs",
+    "| jobs",
+    "vacancy",
+    "hiring now",
+    "drone course",
+    "course -",
+    "training course",
+    "gis mappers",
+    "equipment dealer",
+    "geomax",
+    "chcnav",
+    "service provider",
+    "best 40",
+    "top 40",
+    "linkedin.com/jobs",
+    "glassdoor.com",
+    "gulftalent.com",
+    "naukrigulf.com",
+    "وظائف في",
+    "وظيفة في",
+    "دورة ",
+    "كورس",
+    "تدريب",
+    "مزود خدمة",
+    "yellowpages",
 )
 
 
@@ -76,13 +128,61 @@ def is_skip_email_domain(email: str) -> bool:
     return any(frag in domain for frag in SKIP_EMAIL_DOMAIN_FRAGMENTS)
 
 
-def classify_email(email: str, source: str, verified: bool = False) -> str:
+def _exclude_company_fragments(config: Optional[dict[str, Any]] = None) -> tuple[str, ...]:
+    config = config or load_config()
+    extra = config.get("outreach_quality", {}).get("exclude_company_patterns", [])
+    merged = list(DEFAULT_EXCLUDE_COMPANY_FRAGMENTS) + [str(x).lower() for x in extra]
+    return tuple(dict.fromkeys(merged))
+
+
+def is_excluded_company(
+    name: str,
+    website: Optional[str] = None,
+    job_url: Optional[str] = None,
+    config: Optional[dict[str, Any]] = None,
+) -> bool:
+    """Job boards, HomeRun listings, courses — not hiring employers."""
+    text = " ".join(
+        part for part in (name or "", website or "", job_url or "") if part
+    ).lower()
+    if not text.strip():
+        return True
+    if any(frag in text for frag in _exclude_company_fragments(config)):
+        return True
+    if website:
+        host = urlparse(website).netloc.lower().replace("www.", "")
+        if any(frag in host for frag in SKIP_WEBSITE_HOST_FRAGMENTS):
+            return True
+    return False
+
+
+def is_blocked_outreach_email(email: str, config: Optional[dict[str, Any]] = None) -> bool:
+    """Never send CV to portal / listing addresses."""
+    if not email or "@" not in email:
+        return True
+    if is_skip_email_domain(email):
+        return True
+    config = config or load_config()
+    extra = config.get("outreach_quality", {}).get("exclude_email_domains", [])
+    domain = _email_domain(email)
+    for frag in extra:
+        if frag.lower() in domain:
+            return True
+    return False
+
+
+def classify_email(
+    email: str,
+    source: str,
+    verified: bool = False,
+    config: Optional[dict[str, Any]] = None,
+) -> str:
     """
     Tier: hr | verified | ok | weak | blocked
     """
     if not email or "@" not in email:
         return "blocked"
-    if source == "guessed" or is_skip_email_domain(email):
+    if source == "guessed" or is_blocked_outreach_email(email, config):
         return "blocked"
 
     local = email_local_part(email)
@@ -112,7 +212,7 @@ def is_auto_send_allowed(
     verified: bool = False,
 ) -> bool:
     cfg = quality_settings(config)
-    tier = classify_email(email, source, verified=verified)
+    tier = classify_email(email, source, verified=verified, config=config)
     if tier == "blocked":
         return False
     if tier == "weak" and cfg.get("skip_weak_domain_emails", True):
@@ -148,7 +248,7 @@ def prioritize_sendable(
         source = row.get("email_source") or row.get("source", "")
         verified = bool(row.get("email_verified"))
         score = row.get("job_fit_score", 0)
-        tier = classify_email(email, source, verified=verified)
+        tier = classify_email(email, source, verified=verified, config=config)
 
         if score < min_fit:
             row = {**row, "skip_reason": f"ملاءمة {score}% < {min_fit}%"}
@@ -243,3 +343,91 @@ def get_whatsapp_followup_targets(
 
     ranked = job_fit.rank_companies(targets, config)
     return [r for r in ranked if r.get("job_fit_score", 0) >= min_fit][:limit]
+
+
+def purge_non_employer_targets(config: Optional[dict[str, Any]] = None) -> dict[str, int]:
+    """
+    Remove portal/listing emails and demote non-employer companies (HomeRun, job boards).
+  Does not delete companies that already received a successful send.
+    """
+    config = config or load_config()
+    stats = {
+        "emails_removed": 0,
+        "companies_demoted": 0,
+        "sources_cleared": 0,
+    }
+    portal_sources = ("linkedin", "careers_portal", "deep_search")
+
+    with db.get_connection() as conn:
+        email_rows = conn.execute(
+            "SELECT id, company_id, email FROM emails"
+        ).fetchall()
+        for row in email_rows:
+            if is_blocked_outreach_email(row["email"], config):
+                conn.execute("DELETE FROM emails WHERE id = ?", (row["id"],))
+                stats["emails_removed"] += 1
+
+        companies = conn.execute(
+            "SELECT id, company_name, website, linkedin_url, careers_url, job_url, "
+            "discovery_source, status FROM companies"
+        ).fetchall()
+        for row in companies:
+            cid = row["id"]
+            sent_ok = conn.execute(
+                """
+                SELECT 1 FROM outreach_log
+                WHERE company_id = ? AND dry_run = 0 AND error_message IS NULL
+                LIMIT 1
+                """,
+                (cid,),
+            ).fetchone()
+            if sent_ok:
+                continue
+
+            excluded = is_excluded_company(
+                row["company_name"],
+                row["website"],
+                row["job_url"] or row["careers_url"] or row["linkedin_url"],
+                config,
+            )
+            portal_source = row["discovery_source"] in portal_sources
+            has_email = conn.execute(
+                "SELECT 1 FROM emails WHERE company_id = ? LIMIT 1", (cid,)
+            ).fetchone()
+
+            if excluded or (portal_source and not has_email):
+                conn.execute(
+                    "DELETE FROM emails WHERE company_id = ?", (cid,)
+                )
+                conn.execute(
+                    "UPDATE companies SET status = 'no_email' WHERE id = ?",
+                    (cid,),
+                )
+                stats["companies_demoted"] += 1
+                if portal_source:
+                    stats["sources_cleared"] += 1
+            elif portal_source or excluded:
+                conn.execute(
+                    "UPDATE companies SET status = 'no_email' WHERE id = ?",
+                    (cid,),
+                )
+                stats["companies_demoted"] += 1
+
+        # companies left without primary email
+        for row in conn.execute(
+            """
+            SELECT c.id FROM companies c
+            WHERE c.status IN ('email_found', 'approved')
+            AND NOT EXISTS (
+                SELECT 1 FROM emails e
+                WHERE e.company_id = c.id AND e.is_primary = 1
+            )
+            """
+        ).fetchall():
+            conn.execute(
+                "UPDATE companies SET status = 'no_email' WHERE id = ?",
+                (row["id"],),
+            )
+            stats["companies_demoted"] += 1
+
+    return stats

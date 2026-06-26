@@ -13,12 +13,16 @@ import yaml
 from bs4 import BeautifulSoup
 
 import database as db
+import outreach_quality
 
 USER_AGENT = "BetterJob-Outreach/1.0 (job-search; directory-discovery)"
 SKIP_HOSTS = {
     "facebook.com", "twitter.com", "x.com", "instagram.com", "linkedin.com",
     "youtube.com", "wikipedia.org", "google.com", "play.google.com",
     "apps.apple.com", "yellowpages.com", "indeed.com", "bayt.com",
+    "gulftalent.com", "naukrigulf.com", "ejobsboard.com", "glassdoor.com",
+    "tanqeeb.com", "careers-ksa.com", "homerun.com", "gethomerun.com",
+    "jooble.com", "neuvoo.com", "jobrapido.com",
 }
 
 CITY_QUERIES = {
@@ -117,8 +121,11 @@ def _infer_sector(name: str, url: str) -> str:
 def _matches_filters(name: str, config: dict[str, Any]) -> bool:
     if _is_listing_junk(name):
         return False
-    keywords = [k.lower() for k in config.get("filters", {}).get("include_keywords", [])]
     text = name.lower()
+    exclude = [k.lower() for k in config.get("filters", {}).get("exclude_keywords", [])]
+    if any(kw in text for kw in exclude):
+        return False
+    keywords = [k.lower() for k in config.get("filters", {}).get("include_keywords", [])]
     return any(kw in text for kw in keywords) if keywords else len(name) >= 4
 
 
@@ -223,6 +230,10 @@ def discover_city_directory(
         seen.add(key)
 
         if not _matches_filters(name, config):
+            stats["skipped"] += 1
+            continue
+
+        if outreach_quality.is_excluded_company(name, website, config=config):
             stats["skipped"] += 1
             continue
 

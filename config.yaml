@@ -26,7 +26,7 @@ automation:
   target_cities: [Jeddah, Abha]
   auto_approve: true
   auto_extract: true
-  auto_send: true
+  auto_send: false
   run_on_startup: false
 
 # discovery_provider: multi | overpass | google | csv
@@ -40,13 +40,7 @@ discovery:
     - overpass
     - directory
     - domains
-    - linkedin
-    - careers_portal
-    - deep_search
-  deep_sources:
-    - linkedin
-    - careers_portal
-    - deep_search
+  deep_sources: []
   max_results_per_query: 40
   allow_domain_emails: true
   language: ar
@@ -148,6 +142,23 @@ filters:
     - cafe
     - bar
     - lodging
+  exclude_keywords:
+    - course
+    - training
+    - drone
+    - tutorial
+    - academy
+    - webinar
+    - equipment sales
+    - dealer
+    - distributor
+    - homerun
+    - job at
+    - jobs in
+    - vacancy
+    - دورة
+    - تدريب
+    - كورس
   include_keywords:
     - contractor
     - construction
@@ -206,10 +217,17 @@ outreach_quality:
   whatsapp_followup_top: 30
   whatsapp_min_fit: 50
   whatsapp_skip_recent_days: 7
+  exclude_company_patterns:
+    - homerun
+    - gethomerun
+  exclude_email_domains:
+    - gulftalent.com
+    - naukrigulf.com
+    - ejobsboard.com
 
 sending:
-  max_per_day: 100
-  delay_seconds_between: 45
+  max_per_day: 5
+  delay_seconds_between: 30
   require_manual_approve: false
   attach_uploaded_cv: false
   dry_run: false

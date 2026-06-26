@@ -14,12 +14,8 @@ DB_PATH = Path(__file__).parent / "data" / "outreach.db"
 SENDABLE_EMAIL_SOURCES = (
     "found_on_page",
     "manual",
-    "directory",
-    "domain_pattern",
+    "csv",
     "google_places",
-    "linkedin",
-    "careers_portal",
-    "deep_search",
 )
 
 # حالات تسليم CV / الإيميل

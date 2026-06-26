@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 import yaml
 
 import database as db
+import outreach_quality
 from discover_directory import (
     CITY_QUERIES,
     _clean_name,
@@ -228,6 +229,11 @@ def _upsert_candidate(
         stats["skipped"] += 1
         return
     if not _matches_filters(name, config):
+        stats["skipped"] += 1
+        return
+    if outreach_quality.is_excluded_company(
+        name, website, job_url or careers_url or linkedin_url, config
+    ):
         stats["skipped"] += 1
         return
 

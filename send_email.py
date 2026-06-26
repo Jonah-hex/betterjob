@@ -494,6 +494,12 @@ def send_to_company(
     if email_rec["source"] == "guessed":
         return {"success": False, "error": "إيميل مُخمّن — لا يُرسل تلقائياً"}
 
+    if outreach_quality.is_blocked_outreach_email(email_rec["email"], config):
+        return {
+            "success": False,
+            "error": f"إيميل بوابة/قائمة — لا يُرسل CV: {email_rec['email']}",
+        }
+
     if not outreach_quality.is_auto_send_allowed(
         email_rec["email"], email_rec["source"], config,
         verified=bool(email_rec.get("verified")),
